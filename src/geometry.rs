@@ -1,3 +1,4 @@
+#[derive(Clone, Debug)]
 pub struct Rectangle([f64; 4]);
 
 impl Rectangle {
@@ -15,6 +16,12 @@ impl Rectangle {
     pub fn intersect_point(&self, point: [f64; 2]) -> bool {
         point[0] > self.0[0] && point[0] < self.0[0] + self.0[2]
             && point[1] > self.0[1] && point[1] < self.0[1] + self.0[3]
+    }
+
+    #[inline]
+    pub fn intersect_rect(&self, rect: Rectangle) -> bool {
+        rect.0[0] + rect.0[2] > self.0[0] && rect.0[0] < self.0[0] + self.0[2]
+            && rect.0[1] + rect.0[3] > self.0[1] && rect.0[1] < self.0[1] + self.0[3]
     }
 
     pub fn as_floats(self) -> [f64; 4] {

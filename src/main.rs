@@ -13,13 +13,13 @@ use scene::Scene;
 
 fn main() {
     let mut window: PistonWindow =
-        WindowSettings::new("Hello Piston!", [640, 480])
+        WindowSettings::new("Sizzle!", [640, 480])
         .exit_on_esc(true).build().unwrap();
 
     let mut selected: Option<Rc<RefCell<dyn Entity>>> = None;
     let mut last_pos: Option<[f64; 2]> = None;
 
-    let scene = Scene::new();
+    let mut scene = Scene::new();
 
     while let Some(e) = window.next() {
         window.draw_2d(&e, |context, graphics, _device| {
@@ -41,6 +41,7 @@ fn main() {
                     selected = scene.select(pos);
                     if let Some(ref mut selected) = selected {
                         selected.borrow_mut().grab();
+                        scene.grabbed(selected);
                     }
                 }
             }
@@ -50,6 +51,7 @@ fn main() {
             if button == Button::Mouse(MouseButton::Left) {
                 if let Some(ref mut selected) = selected {
                     selected.borrow_mut().drop();
+                    scene.dropped(selected);
                 }
                 selected = None;
             }
