@@ -8,9 +8,15 @@ use piston_window::{context::Context,G2d};
 use noise::{Seedable, NoiseFn};
 use rand::Rng;
 
+pub enum Selection {
+    None,
+    This,
+    New(Rc<RefCell<dyn Entity>>),
+}
+
 pub trait Entity {
     fn bounds(&self) -> Rectangle;
-    fn select(&self, _pos: [f64; 2]) -> bool { false }
+    fn select(&mut self, _pos: [f64; 2]) -> Selection { Selection::None }
     fn update(&mut self, _dt: f64) -> Vec<Rc<RefCell<dyn Entity>>> { vec![] }
     fn update_selected(&mut self, _dt: f64) {}
     fn grab(&mut self) {}
@@ -19,7 +25,9 @@ pub trait Entity {
     fn draw(&self, context: Context, graphics: &mut G2d);
     fn set_pos(&mut self, _pos: [f64; 2]) {}
     fn filling(&self) -> Option<Filling> { None }
-    fn add_filling(&mut self, _sausage: &Rc<RefCell<dyn Entity>>) -> bool { false }
+    fn add_filling(&mut self, _filling: &Rc<RefCell<dyn Entity>>) -> bool { false }
+    fn is_onion(&self) -> bool { false }
+    fn add_onion(&mut self, _onion: &Rc<RefCell<dyn Entity>>) -> bool { false }
     fn set_heat(&mut self, _heat: f64) {}
     fn heat(&self, _pos: [f64; 2]) -> f64 { 0.0 }
     fn expired(&self) -> bool { false }
@@ -76,8 +84,12 @@ impl Entity for Cookable {
         }
     }
 
-    fn select(&self, pos: [f64; 2]) -> bool {
-        self.bounds().intersect_point(pos)
+    fn select(&mut self, pos: [f64; 2]) -> Selection {
+        if self.bounds().intersect_point(pos) {
+            Selection::This
+        } else {
+            Selection::None
+        }
     }
 
     fn update(&mut self, dt: f64) -> Vec<Rc<RefCell<dyn Entity>>> {
@@ -267,6 +279,7 @@ impl Entity for Table {
 pub struct Bread {
     pos: [f64; 2],
     fillings: Vec<Rc<RefCell<dyn Entity>>>,
+    onion: Option<Rc<RefCell<dyn Entity>>>,
 }
 
 impl Bread {
@@ -274,6 +287,7 @@ impl Bread {
         Bread{
             pos,
             fillings: Vec::new(),
+            onion: None,
         }
     }
 }
@@ -283,8 +297,12 @@ impl Entity for Bread {
         Rectangle::centered(self.pos, BREAD_SIZE)
     }
 
-    fn select(&self, pos: [f64; 2]) -> bool {
-        self.bounds().intersect_point(pos)
+    fn select(&mut self, pos: [f64; 2]) -> Selection {
+        if self.bounds().intersect_point(pos) {
+            Selection::This
+        } else {
+            Selection::None
+        }
     }
 
     fn drag(&mut self, from: [f64; 2], to: [f64; 2]) {
@@ -293,6 +311,9 @@ impl Entity for Bread {
         }
         for filling in &self.fillings {
             filling.borrow_mut().drag(from, to);
+        }
+        if let Some(onion) = &self.onion {
+            onion.borrow_mut().drag(from, to);
         }
     }
 
@@ -313,6 +334,9 @@ impl Entity for Bread {
         for filling in &self.fillings {
             filling.borrow().draw(context, graphics);
         }
+        if let Some(onion) = &self.onion {
+            onion.borrow().draw(context, graphics);
+        }
     }
 
     fn add_filling(&mut self, filling: &Rc<RefCell<dyn Entity>>) -> bool {
@@ -331,6 +355,16 @@ impl Entity for Bread {
             false
         }
     }
+
+    fn add_onion(&mut self, onion: &Rc<RefCell<dyn Entity>>) -> bool {
+        if let None = self.onion {
+            self.onion = Some(onion.clone());
+            true
+        } else {
+            false
+        }
+    }
+
 }
 
 pub struct Smoke {
@@ -425,13 +459,26 @@ impl Entity for ChoppingBoard {
         Rectangle::centered(self.pos, [90.0, 120.0])
     }
 
-    fn select(&self, pos: [f64; 2]) -> bool {
-        self.bounds().intersect_point(pos)
+    fn select(&mut self, pos: [f64; 2]) -> Selection {
+        if self.bounds().intersect_point(pos) {
+            if self.progress < 1.0 {
+                Selection::This
+            } else if let Some(onion) = self.onions.pop() {
+                if self.onions.len() == 0 {
+                    self.progress = 0.0;
+                    self.onions = vec![Onion::new(pos), Onion::new(pos), Onion::new(pos), Onion::new(pos)];
+                }
+                Selection::New(Rc::new(RefCell::new(onion)))
+            } else {
+                Selection::None
+            }
+        } else {
+            Selection::None
+        }
     }
 
     fn update_selected(&mut self, dt: f64) {
         self.progress = (self.progress + dt * CHOP_SPEED).min(1.0);
-        println!("{}", self.progress);
     }
 
     fn draw(&self, context: Context, graphics: &mut G2d) {
@@ -444,7 +491,11 @@ impl Entity for ChoppingBoard {
         if self.progress < 1.0 {
             let size = [50.0, 45.0];
             let onion = Rectangle::centered(centre, size);
-            let colour = [191.0 / 255.0, 145.0 / 255.0, 59.0 / 255.0, 1.0];
+            let colour = if self.progress < 0.2 {
+                [191.0 / 255.0, 145.0 / 255.0, 59.0 / 255.0, 1.0]
+            } else {
+                [RAW_ONION[0], RAW_ONION[1], RAW_ONION[2], 1.0]
+            };
             piston_window::ellipse(colour,
                                    onion.as_floats(),
                                    context.transform,
@@ -542,9 +593,12 @@ impl Entity for Onion {
         self.bounds.clone()
     }
 
-    
-    fn select(&self, pos: [f64; 2]) -> bool {
-        self.bounds().intersect_point(pos)
+    fn select(&mut self, pos: [f64; 2]) -> Selection {
+        if self.bounds().intersect_point(pos) {
+            Selection::This
+        } else {
+            Selection::None
+        }
     }
 
     fn update(&mut self, dt: f64) -> Vec<Rc<RefCell<dyn Entity>>> {
@@ -563,22 +617,29 @@ impl Entity for Onion {
     }
 
     fn drag(&mut self, from: [f64; 2], to: [f64; 2]) {
+        let mut bounds = self.bounds().as_floats();
         for i in 0..2 {
             self.pos[i] += to[i] - from[i];
+            bounds[i] += to[i] - from[i];
         }
+        self.bounds = Rectangle::new([bounds[0], bounds[1]], [bounds[2], bounds[3]]);
     }
 
     fn set_pos(&mut self, pos: [f64; 2]) {
         self.pos = pos;
     }
 
-    fn grab(&mut self) {
+    fn drop(&mut self) {
         self.scramble();
         self.heat = 0.0;
     }
 
     fn set_heat(&mut self, heat: f64) {
         self.heat = heat;
+    }
+
+    fn is_onion(&self) -> bool {
+        true
     }
 
     fn draw(&self, context: Context, graphics: &mut G2d) {
@@ -619,7 +680,7 @@ impl OnionPiece {
         let r = self.rect[2] / 2.0;
         let sc = self.start.cos();
         let ec = self.end.cos();
-        let xmin = if self.end - (self.start - std::f64::consts::PI).div_euclid(2.0 * std::f64::consts::PI) * 2.0 * std::f64::consts::PI > 2.0 * std::f64::consts::PI {
+        let xmin = if self.end - std::f64::consts::PI - (self.start - std::f64::consts::PI).div_euclid(2.0 * std::f64::consts::PI) * 2.0 * std::f64::consts::PI > 2.0 * std::f64::consts::PI {
             -1.0
         } else {
             sc.min(ec)
@@ -631,17 +692,17 @@ impl OnionPiece {
         } * r;
         let ss = self.start.sin();
         let es = self.end.sin();
-        let ymin = if self.end - (self.start - 3.0 / 4.0 * std::f64::consts::PI).div_euclid(2.0 * std::f64::consts::PI) * 2.0 * std::f64::consts::PI > 2.0 * std::f64::consts::PI {
+        let ymin = if self.end - 3.0 / 2.0 * std::f64::consts::PI - (self.start - 3.0 / 2.0 * std::f64::consts::PI).div_euclid(2.0 * std::f64::consts::PI) * 2.0 * std::f64::consts::PI > 2.0 * std::f64::consts::PI {
             -1.0
         } else {
             ss.min(es)
         } * r;
-        let ymax = if self.end - (self.start - 1.0 / 4.0 * std::f64::consts::PI).div_euclid(2.0 * std::f64::consts::PI) * 2.0 * std::f64::consts::PI > 2.0 * std::f64::consts::PI {
+        let ymax = if self.end - 1.0 / 2.0 * std::f64::consts::PI - (self.start - 1.0 / 2.0 * std::f64::consts::PI).div_euclid(2.0 * std::f64::consts::PI) * 2.0 * std::f64::consts::PI > 2.0 * std::f64::consts::PI {
             1.0
         } else {
             ss.max(es)
         } * r;
-        Rectangle::new([pos[0] + self.rect[0] + xmin, pos[1] + self.rect[1] + ymin], [xmax - xmin, ymax - ymin])
+        Rectangle::new([pos[0] + self.rect[0] + self.rect[2] / 2.0 + xmin, pos[1] + self.rect[1] + self.rect[3] / 2.0 + ymin], [xmax - xmin, ymax - ymin])
     }
 
     fn draw(&self, pos: [f64; 2], colour: [f32; 4], context: Context, graphics: &mut G2d) {

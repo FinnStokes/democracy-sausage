@@ -1,6 +1,6 @@
 use piston_window::{context::Context,G2d};
 
-use crate::entity::{Entity, Cookable, Filling, Bread, Hotplate, Table, ChoppingBoard};
+use crate::entity::{Entity, Selection, Cookable, Filling, Bread, Hotplate, Table, ChoppingBoard};
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -44,13 +44,26 @@ impl Scene {
         self.0.append(&mut new);
     }
 
-    pub fn select(&self, pos: [f64; 2]) -> Option<Rc<RefCell<dyn Entity>>> {
-        for e in self.0.iter().rev() {
-            if e.borrow().select(pos) {
-                return Some(e.clone())
-            }
+    pub fn select(&mut self, pos: [f64; 2]) -> Option<Rc<RefCell<dyn Entity>>> {
+        enum Action {
+            Return(Rc<RefCell<dyn Entity>>),
+            Append(Rc<RefCell<dyn Entity>>),
         }
-        None
+
+        match self.0.iter().rev().find_map(|e| {
+            match e.borrow_mut().select(pos) {
+                Selection::None => None,
+                Selection::This => Some(Action::Return(e.clone())),
+                Selection::New(entity) => Some(Action::Append(entity)),
+            }
+        }) {
+            Some(Action::Return(e)) => Some(e),
+            Some(Action::Append(e)) => {
+                self.0.push(e.clone());
+                Some(e)
+            },
+            None => None,
+        }
     }
 
     pub fn grabbed(&mut self, entity: &Rc<RefCell<dyn Entity>>) {
@@ -63,6 +76,15 @@ impl Scene {
         if !entity.borrow().filling().is_none() {
             for e in self.0.iter().rev().filter(|e| !Rc::ptr_eq(e, entity) && e.borrow().bounds().intersect_rect(&entity.borrow().bounds())) {
                 if e.borrow_mut().add_filling(entity) {
+                    let n = self.0.iter().enumerate().filter(|(_, e)| Rc::ptr_eq(e, entity)).next().unwrap().0;
+                    self.0.remove(n);
+                    return;
+                }
+            }
+        }
+        if entity.borrow().is_onion() {
+            for e in self.0.iter().rev().filter(|e| !Rc::ptr_eq(e, entity) && e.borrow().bounds().intersect_rect(&entity.borrow().bounds())) {
+                if e.borrow_mut().add_onion(entity) {
                     let n = self.0.iter().enumerate().filter(|(_, e)| Rc::ptr_eq(e, entity)).next().unwrap().0;
                     self.0.remove(n);
                     return;
