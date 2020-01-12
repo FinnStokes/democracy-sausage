@@ -1,4 +1,4 @@
-#![feature(drain_filter, clamp)]
+#![feature(drain_filter, clamp, option_result_contains)]
 
 use piston_window::*;
 
@@ -25,7 +25,7 @@ fn main() {
 
     while let Some(e) = window.next() {
         window.draw_2d(&e, |context, graphics, _device| {
-            clear([1.0; 4], graphics);
+            clear([90.0 / 255.0, 202.0 / 255.0, 77.0 / 255.0, 1.0], graphics);
             scene.draw(context, graphics);
         });
         

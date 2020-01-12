@@ -19,7 +19,7 @@ impl Rectangle {
     }
 
     #[inline]
-    pub fn intersect_rect(&self, rect: Rectangle) -> bool {
+    pub fn intersect_rect(&self, rect: &Rectangle) -> bool {
         rect.0[0] + rect.0[2] > self.0[0] && rect.0[0] < self.0[0] + self.0[2]
             && rect.0[1] + rect.0[3] > self.0[1] && rect.0[1] < self.0[1] + self.0[3]
     }
@@ -27,6 +27,15 @@ impl Rectangle {
     #[inline]
     pub fn centre(&self) ->[f64; 2] {
         [self.0[0] + self.0[2] / 2.0, self.0[1] + self.0[3] / 2.0]
+    }
+
+    #[inline]
+    pub fn union(&self, rect: &Rectangle) -> Rectangle {
+        let xmin = self.0[0].min(rect.0[0]);
+        let xmax = (self.0[0] + self.0[2]).max(rect.0[0] + rect.0[2]);
+        let ymin = self.0[1].min(rect.0[1]);
+        let ymax = (self.0[1] + self.0[3]).max(rect.0[1] + rect.0[3]);
+        Rectangle::new([xmin, ymin], [xmax - xmin, ymax - ymin])
     }
 
     pub fn as_floats(self) -> [f64; 4] {

@@ -1,6 +1,6 @@
 use piston_window::{context::Context,G2d};
 
-use crate::entity::{Entity, Sausage, Bread, Hotplate};
+use crate::entity::{Entity, Cookable, Filling, Bread, Hotplate, Table, ChoppingBoard};
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -10,20 +10,22 @@ pub struct Scene(Vec<Rc<RefCell<dyn Entity>>>);
 impl Scene {
     pub fn new() -> Scene {
         let hotplates: Vec<Rc<RefCell<dyn Entity>>> = vec![
-            Rc::new(RefCell::new(Hotplate::new([200.0, 50.0], [200.0, 200.0], rand::random()))),
-            Rc::new(RefCell::new(Hotplate::new([420.0, 50.0], [200.0, 200.0], rand::random()))),
+            Rc::new(RefCell::new(Hotplate::new([200.0, 150.0], [420.0, 160.0], rand::random()))),
         ];
         Scene(vec![
+              Rc::new(RefCell::new(Table::new([-40.0, 150.0], [220.0, 440.0]))),
+              Rc::new(RefCell::new(ChoppingBoard::new([100.0, 400.0]))),
               hotplates[0].clone(),
-              hotplates[1].clone(),
-              Rc::new(RefCell::new(Bread::new([102.5, 200.0]))),
-              Rc::new(RefCell::new(Bread::new([120.0, 200.0]))),
-              Rc::new(RefCell::new(Bread::new([137.5, 200.0]))),
-              Rc::new(RefCell::new(Sausage::new([80.0, 100.0]))),
-              Rc::new(RefCell::new(Sausage::new([100.0, 100.0]))),
-              Rc::new(RefCell::new(Sausage::new([120.0, 100.0]))),
-              Rc::new(RefCell::new(Sausage::new([140.0, 100.0]))),
-              Rc::new(RefCell::new(Sausage::new([160.0, 100.0]))),
+              Rc::new(RefCell::new(Bread::new([102.5, 287.5]))),
+              Rc::new(RefCell::new(Bread::new([120.0, 287.5]))),
+              Rc::new(RefCell::new(Bread::new([137.5, 287.5]))),
+              Rc::new(RefCell::new(Cookable::new(Filling::Sausage, [80.0, 200.0]))),
+              Rc::new(RefCell::new(Cookable::new(Filling::Sausage, [100.0, 200.0]))),
+              Rc::new(RefCell::new(Cookable::new(Filling::Sausage, [120.0, 200.0]))),
+              Rc::new(RefCell::new(Cookable::new(Filling::Sausage, [140.0, 200.0]))),
+              Rc::new(RefCell::new(Cookable::new(Filling::Sausage, [160.0, 200.0]))),
+              Rc::new(RefCell::new(Cookable::new(Filling::VeggiePatty, [30.0, 200.0]))),
+              Rc::new(RefCell::new(Cookable::new(Filling::VeggiePatty, [30.0, 250.0]))),
         ])
     }
 
@@ -58,9 +60,9 @@ impl Scene {
     }
 
     pub fn dropped(&mut self, entity: &Rc<RefCell<dyn Entity>>) {
-        if entity.borrow().is_sausage() {
-            for e in self.0.iter().rev().filter(|e| !Rc::ptr_eq(e, entity) && e.borrow().bounds().intersect_rect(entity.borrow().bounds())) {
-                if e.borrow_mut().add_sausage(entity) {
+        if !entity.borrow().filling().is_none() {
+            for e in self.0.iter().rev().filter(|e| !Rc::ptr_eq(e, entity) && e.borrow().bounds().intersect_rect(&entity.borrow().bounds())) {
+                if e.borrow_mut().add_filling(entity) {
                     let n = self.0.iter().enumerate().filter(|(_, e)| Rc::ptr_eq(e, entity)).next().unwrap().0;
                     self.0.remove(n);
                     return;
