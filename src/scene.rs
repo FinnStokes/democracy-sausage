@@ -10,8 +10,8 @@ pub struct Scene(Vec<Rc<RefCell<dyn Entity>>>);
 impl Scene {
     pub fn new() -> Scene {
         let hotplates: Vec<Rc<RefCell<dyn Entity>>> = vec![
-            Rc::new(RefCell::new(Hotplate::new([200.0, 50.0], [200.0, 200.0]))),
-            Rc::new(RefCell::new(Hotplate::new([420.0, 50.0], [200.0, 200.0]))),
+            Rc::new(RefCell::new(Hotplate::new([200.0, 50.0], [200.0, 200.0], rand::random()))),
+            Rc::new(RefCell::new(Hotplate::new([420.0, 50.0], [200.0, 200.0], rand::random()))),
         ];
         Scene(vec![
               hotplates[0].clone(),
@@ -19,11 +19,11 @@ impl Scene {
               Rc::new(RefCell::new(Bread::new([102.5, 200.0]))),
               Rc::new(RefCell::new(Bread::new([120.0, 200.0]))),
               Rc::new(RefCell::new(Bread::new([137.5, 200.0]))),
-              Rc::new(RefCell::new(Sausage::new([80.0, 100.0], hotplates.clone()))),
-              Rc::new(RefCell::new(Sausage::new([100.0, 100.0], hotplates.clone()))),
-              Rc::new(RefCell::new(Sausage::new([120.0, 100.0], hotplates.clone()))),
-              Rc::new(RefCell::new(Sausage::new([140.0, 100.0], hotplates.clone()))),
-              Rc::new(RefCell::new(Sausage::new([160.0, 100.0], hotplates.clone()))),
+              Rc::new(RefCell::new(Sausage::new([80.0, 100.0]))),
+              Rc::new(RefCell::new(Sausage::new([100.0, 100.0]))),
+              Rc::new(RefCell::new(Sausage::new([120.0, 100.0]))),
+              Rc::new(RefCell::new(Sausage::new([140.0, 100.0]))),
+              Rc::new(RefCell::new(Sausage::new([160.0, 100.0]))),
         ])
     }
 
@@ -33,10 +33,13 @@ impl Scene {
         }
     }
 
-    pub fn update(&self, dt: f64) {
+    pub fn update(&mut self, dt: f64) {
+        let mut new = vec![];
         for e in self.0.iter() {
-            e.borrow_mut().update(dt);
+            new.append(&mut e.borrow_mut().update(dt));
         }
+        self.0.drain_filter(|e| e.borrow().expired()).count();
+        self.0.append(&mut new);
     }
 
     pub fn select(&self, pos: [f64; 2]) -> Option<Rc<RefCell<dyn Entity>>> {
@@ -64,5 +67,7 @@ impl Scene {
                 }
             }
         }
+        let pos = entity.borrow().bounds().centre();
+        entity.borrow_mut().set_heat(self.0.iter().filter(|e| !Rc::ptr_eq(e, entity)).map(|e| e.borrow().heat(pos)).sum());
     }
 }

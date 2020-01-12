@@ -24,6 +24,11 @@ impl Rectangle {
             && rect.0[1] + rect.0[3] > self.0[1] && rect.0[1] < self.0[1] + self.0[3]
     }
 
+    #[inline]
+    pub fn centre(&self) ->[f64; 2] {
+        [self.0[0] + self.0[2] / 2.0, self.0[1] + self.0[3] / 2.0]
+    }
+
     pub fn as_floats(self) -> [f64; 4] {
         self.0
     }
