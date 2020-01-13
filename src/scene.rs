@@ -73,18 +73,9 @@ impl Scene {
     }
 
     pub fn dropped(&mut self, entity: &Rc<RefCell<dyn Entity>>) {
-        if !entity.borrow().filling().is_none() {
+        if !entity.borrow().topping().is_none() {
             for e in self.0.iter().rev().filter(|e| !Rc::ptr_eq(e, entity) && e.borrow().bounds().intersect_rect(&entity.borrow().bounds())) {
-                if e.borrow_mut().add_filling(entity) {
-                    let n = self.0.iter().enumerate().filter(|(_, e)| Rc::ptr_eq(e, entity)).next().unwrap().0;
-                    self.0.remove(n);
-                    return;
-                }
-            }
-        }
-        if entity.borrow().is_onion() {
-            for e in self.0.iter().rev().filter(|e| !Rc::ptr_eq(e, entity) && e.borrow().bounds().intersect_rect(&entity.borrow().bounds())) {
-                if e.borrow_mut().add_onion(entity) {
+                if e.borrow_mut().add_topping(entity) {
                     let n = self.0.iter().enumerate().filter(|(_, e)| Rc::ptr_eq(e, entity)).next().unwrap().0;
                     self.0.remove(n);
                     return;

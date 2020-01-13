@@ -24,10 +24,9 @@ pub trait Entity {
     fn drag(&mut self, _from: [f64; 2], _to: [f64; 2]) {}
     fn draw(&self, context: Context, graphics: &mut G2d);
     fn set_pos(&mut self, _pos: [f64; 2]) {}
-    fn filling(&self) -> Option<Filling> { None }
-    fn add_filling(&mut self, _filling: &Rc<RefCell<dyn Entity>>) -> bool { false }
-    fn is_onion(&self) -> bool { false }
-    fn add_onion(&mut self, _onion: &Rc<RefCell<dyn Entity>>) -> bool { false }
+    fn topping(&self) -> Option<Topping> { None }
+    fn add_topping(&mut self, _topping: &Rc<RefCell<dyn Entity>>) -> bool { false }
+    fn add_to(&mut self, _pos: [f64; 2], _others: &[Rc<RefCell<dyn Entity>>]) -> bool { false }
     fn set_heat(&mut self, _heat: f64) {}
     fn heat(&self, _pos: [f64; 2]) -> f64 { 0.0 }
     fn expired(&self) -> bool { false }
@@ -47,6 +46,12 @@ const BOARD: [f32; 4] = [156.0 / 244.0, 244.0 / 241.0, 243.0 / 255.0, 1.0];
 const MIN_HEAT: f64 = 0.03;
 const PERLIN_HEAT: f64 = 0.07;
 const CHOP_SPEED: f64 = 0.25;
+
+#[derive(PartialEq, Eq, Clone, Copy)]
+pub enum Topping {
+    Filling(Filling),
+    Onion,
+}
 
 #[derive(PartialEq, Eq, Clone, Copy)]
 pub enum Filling {
@@ -164,8 +169,34 @@ impl Entity for Cookable {
         }
     }
 
-    fn filling(&self) -> Option<Filling> {
-        Some(self.kind)
+    fn topping(&self) -> Option<Topping> {
+        Some(Topping::Filling(self.kind))
+    }
+
+    fn add_to(&mut self, pos: [f64; 2], others: &[Rc<RefCell<dyn Entity>>]) -> bool {
+        let mut other_fillings = others.iter()
+            .filter(|e| if let Some(Topping::Filling(_)) = e.borrow().topping() {
+                true
+            } else {
+                false
+            });
+        match other_fillings.next() {
+            None => {
+                self.set_pos(pos);
+                true
+            },
+            Some(f) => if f.borrow().topping().contains(&Topping::Filling(Filling::Sausage)) && self.kind == Filling::Sausage {
+                if let None = other_fillings.next() {
+                    self.pos = [pos[0] + SAUSAGE_OFFSET, pos[1]];
+                    f.borrow_mut().set_pos([pos[0] - SAUSAGE_OFFSET, pos[1]]);
+                    true
+                } else {
+                    false
+                }
+            } else {
+                false
+            }
+        }
     }
 }
 
@@ -278,16 +309,14 @@ impl Entity for Table {
 
 pub struct Bread {
     pos: [f64; 2],
-    fillings: Vec<Rc<RefCell<dyn Entity>>>,
-    onion: Option<Rc<RefCell<dyn Entity>>>,
+    toppings: Vec<Rc<RefCell<dyn Entity>>>,
 }
 
 impl Bread {
     pub fn new(pos: [f64; 2]) -> Bread {
         Bread{
             pos,
-            fillings: Vec::new(),
-            onion: None,
+            toppings: Vec::new(),
         }
     }
 }
@@ -309,11 +338,8 @@ impl Entity for Bread {
         for i in 0..2 {
             self.pos[i] += to[i] - from[i];
         }
-        for filling in &self.fillings {
-            filling.borrow_mut().drag(from, to);
-        }
-        if let Some(onion) = &self.onion {
-            onion.borrow_mut().drag(from, to);
+        for topping in &self.toppings {
+            topping.borrow_mut().drag(from, to);
         }
     }
 
@@ -331,40 +357,19 @@ impl Entity for Bread {
                                  inner_size.as_floats(),
                                  context.transform,
                                  graphics);
-        for filling in &self.fillings {
-            filling.borrow().draw(context, graphics);
-        }
-        if let Some(onion) = &self.onion {
-            onion.borrow().draw(context, graphics);
+        for topping in &self.toppings {
+            topping.borrow().draw(context, graphics);
         }
     }
 
-    fn add_filling(&mut self, filling: &Rc<RefCell<dyn Entity>>) -> bool {
-        if self.fillings.len() == 0 {
-            filling.borrow_mut().set_pos(self.pos.clone());
-            self.fillings.push(filling.clone());
-            true
-        } else if self.fillings.len() == 1
-                  && self.fillings[0].borrow().filling().contains(&Filling::Sausage)
-                  && filling.borrow().filling().contains(&Filling::Sausage) {
-            self.fillings[0].borrow_mut().set_pos([self.pos[0] - SAUSAGE_OFFSET, self.pos[1]]);
-            filling.borrow_mut().set_pos([self.pos[0] + SAUSAGE_OFFSET, self.pos[1]]);
-            self.fillings.push(filling.clone());
+    fn add_topping(&mut self, topping: &Rc<RefCell<dyn Entity>>) -> bool {
+        if topping.borrow_mut().add_to(self.pos.clone(), &self.toppings) {
+            self.toppings.push(topping.clone());
             true
         } else {
             false
         }
     }
-
-    fn add_onion(&mut self, onion: &Rc<RefCell<dyn Entity>>) -> bool {
-        if let None = self.onion {
-            self.onion = Some(onion.clone());
-            true
-        } else {
-            false
-        }
-    }
-
 }
 
 pub struct Smoke {
@@ -638,8 +643,20 @@ impl Entity for Onion {
         self.heat = heat;
     }
 
-    fn is_onion(&self) -> bool {
-        true
+    fn topping(&self) -> Option<Topping> {
+        Some(Topping::Onion)
+    }
+
+    fn add_to(&mut self, pos: [f64; 2], others: &[Rc<RefCell<dyn Entity>>]) -> bool {
+        if others.iter()
+                 .filter(|e| e.borrow().topping().contains(&Topping::Onion))
+                 .next()
+                 .is_none() {
+            self.set_pos(pos);
+            true
+        } else {
+            false
+        }
     }
 
     fn draw(&self, context: Context, graphics: &mut G2d) {
