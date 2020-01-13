@@ -1,6 +1,6 @@
 use piston_window::{context::Context,G2d};
 
-use crate::entity::{Entity, Selection, Cookable, Filling, Bread, Hotplate, Table, ChoppingBoard};
+use crate::entity::{Entity, Selection, Cookable, Filling, Bread, Hotplate, Table, Bottle, Condiment, ChoppingBoard};
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -24,8 +24,10 @@ impl Scene {
               Rc::new(RefCell::new(Cookable::new(Filling::Sausage, [120.0, 200.0]))),
               Rc::new(RefCell::new(Cookable::new(Filling::Sausage, [140.0, 200.0]))),
               Rc::new(RefCell::new(Cookable::new(Filling::Sausage, [160.0, 200.0]))),
-              Rc::new(RefCell::new(Cookable::new(Filling::VeggiePatty, [30.0, 200.0]))),
-              Rc::new(RefCell::new(Cookable::new(Filling::VeggiePatty, [30.0, 250.0]))),
+              Rc::new(RefCell::new(Cookable::new(Filling::VeggiePatty, [30.0, 255.0]))),
+              Rc::new(RefCell::new(Cookable::new(Filling::VeggiePatty, [30.0, 300.0]))),
+              Rc::new(RefCell::new(Bottle::new(Condiment::Sauce, [15.0, 150.0]))),
+              Rc::new(RefCell::new(Bottle::new(Condiment::Mustard, [45.0, 150.0]))),
         ])
     }
 
@@ -75,10 +77,17 @@ impl Scene {
     pub fn dropped(&mut self, entity: &Rc<RefCell<dyn Entity>>) {
         if !entity.borrow().topping().is_none() {
             for e in self.0.iter().rev().filter(|e| !Rc::ptr_eq(e, entity) && e.borrow().bounds().intersect_rect(&entity.borrow().bounds())) {
-                if e.borrow_mut().add_topping(entity) {
-                    let n = self.0.iter().enumerate().filter(|(_, e)| Rc::ptr_eq(e, entity)).next().unwrap().0;
-                    self.0.remove(n);
-                    return;
+                let res = e.borrow_mut().add_topping(entity);
+                match res {
+                    Selection::This => {
+                        let n = self.0.iter().enumerate().filter(|(_, e)| Rc::ptr_eq(e, entity)).next().unwrap().0;
+                        self.0.remove(n);
+                        return;
+                    },
+                    Selection::New(_) => {
+                        return;
+                    },
+                    Selection::None => {},
                 }
             }
         }
