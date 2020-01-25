@@ -6,7 +6,8 @@ use crate::colour::interpolate_colour;
 
 use piston_window::{context::Context,G2d};
 use noise::{Seedable, NoiseFn};
-use rand::Rng;
+use rand::{Rng,distributions::Bernoulli};
+use rand_distr::Beta;
 
 pub enum Selection {
     None,
@@ -29,13 +30,22 @@ pub trait Entity {
     fn add_to(&mut self, _pos: [f64; 2], _others: &[Rc<RefCell<dyn Entity>>]) -> Selection { Selection::None }
     fn set_heat(&mut self, _heat: f64) {}
     fn heat(&self, _pos: [f64; 2]) -> f64 { 0.0 }
+    fn cooked(&self) -> [f64; 2] { [0.0, 0.0] }
     fn expired(&self) -> bool { false }
+    fn order(&self) -> Option<&Bread> { None }
+    fn deliver_order(&mut self, _order: &Bread) -> Option<Mood> { None }
 }
 
-const SAUSAGE_SIZE: [f64; 2] = [15.0, 75.0];
-const PATTY_SIZE: [f64; 2] = [55.0, 40.0];
+const SAUSAGE_SIZE: [f64; 2] = [13.0, 65.0];
+const PATTY_SIZE: [f64; 2] = [50.0, 36.0];
+const PLATE_SIZE: [f64; 2] = [78.0, 78.0];
 const SAUSAGE_OFFSET: f64 = 10.0;
-const BREAD_SIZE: [f64; 2] = [60.0, 60.0];
+const BREAD_SIZE: [f64; 2] = [53.0, 53.0];
+const WHITE: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
+const HAPPY: [f32; 4] = [0.3, 1.0, 0.4, 1.0];
+const NEUTRAL: [f32; 4] = [0.9, 0.9, 0.1, 1.0];
+const SAD: [f32; 4] = [1.0, 0.1, 0.1, 1.0];
+const LIGHT_GREY: [f32; 4] = [0.95, 0.95, 0.95, 1.0];
 const PINK: [f32; 4] = [239.0 / 255.0, 115.0 / 255.0, 156.0 / 255.0, 1.0];
 const YELLOW: [f32; 4] = [252.0 / 255.0, 217.0 / 255.0, 75.0 / 255.0, 1.0];
 const ORANGE: [f32; 4] = [247.0 / 255.0, 155.0 / 255.0, 27.0 / 255.0, 1.0];
@@ -46,6 +56,10 @@ const BOARD: [f32; 4] = [156.0 / 244.0, 244.0 / 241.0, 243.0 / 255.0, 1.0];
 const MIN_HEAT: f64 = 0.03;
 const PERLIN_HEAT: f64 = 0.07;
 const CHOP_SPEED: f64 = 0.25;
+const CUSTOMERS_PER_SECOND: f64 = 0.1;
+const ORDER_OFFSET: [f64; 2] = [0.0, 90.0];
+const QUEUE_SPACING: f64 = 130.0;
+const QUEUE_SPEED: f64 = 100.0;
 
 #[derive(PartialEq, Eq, Clone, Copy)]
 pub enum Topping {
@@ -86,11 +100,15 @@ pub struct Cookable {
 
 impl Cookable {
     pub fn new(kind: Filling, pos: [f64; 2]) -> Cookable {
+        Cookable::with_cooked(kind, pos, 0.0)
+    }
+
+    pub fn with_cooked(kind: Filling, pos: [f64; 2], cooked:f64) -> Cookable {
         Cookable{
             pos,
             heat: 0.0,
-            top_cooked: 0.0,
-            bottom_cooked: 0.0,
+            top_cooked: cooked,
+            bottom_cooked: cooked,
             flipped: false,
             kind,
         }
@@ -145,6 +163,13 @@ impl Entity for Cookable {
         self.bottom_cooked = tmp;
         self.flipped = !self.flipped;
         self.heat = 0.0;
+    }
+
+    fn cooked(&self) -> [f64; 2] {
+        [
+            self.top_cooked.min(self.bottom_cooked),
+            self.top_cooked.max(self.bottom_cooked),
+        ]
     }
 
     fn set_heat(&mut self, heat: f64) {
@@ -232,7 +257,7 @@ impl Hotplate {
 
 impl Entity for Hotplate {
     fn bounds(&self) -> Rectangle {
-        self.bounds.clone()
+        self.bounds
     }
 
     fn draw(&self, context: Context, graphics: &mut G2d) {
@@ -311,7 +336,7 @@ fn rounded_rectangle(colour: [f32; 4], bounds: [f64; 4], r: f64, transform: [[f6
 
 impl Entity for Table {
     fn bounds(&self) -> Rectangle {
-        self.bounds.clone()
+        self.bounds
     }
 
     fn draw(&self, context: Context, graphics: &mut G2d) {
@@ -323,6 +348,7 @@ impl Entity for Table {
     }
 }
 
+#[derive(Clone)]
 pub struct Bread {
     pos: [f64; 2],
     toppings: Vec<Rc<RefCell<dyn Entity>>>,
@@ -379,7 +405,7 @@ impl Entity for Bread {
     }
 
     fn add_topping(&mut self, topping: &Rc<RefCell<dyn Entity>>) -> Selection {
-        let res = topping.borrow_mut().add_to(self.pos.clone(), &self.toppings);
+        let res = topping.borrow_mut().add_to(self.pos, &self.toppings);
         match &res {
             Selection::This => {
                 self.toppings.push(topping.clone());
@@ -390,6 +416,10 @@ impl Entity for Bread {
             _ => {},
         }
         res
+    }
+
+    fn order(&self) -> Option<&Bread> {
+        Some(self)
     }
 }
 
@@ -576,6 +606,10 @@ pub struct OnionPiece {
 
 impl Onion {
     pub fn new(pos: [f64; 2]) -> Onion {
+        Onion::with_cooked(pos, 0.0)
+    }
+
+    pub fn with_cooked(pos: [f64; 2], cooked: f64) -> Onion {
         let layers: [[OnionPiece; ONION_PIECES]; ONION_LAYERS] = array_init::array_init(
             |_| array_init::array_init(
                 |_| OnionPiece::new()
@@ -588,7 +622,7 @@ impl Onion {
         Onion{
             pos,
             heat: 0.0,
-            cooked: [0.0; ONION_LAYERS],
+            cooked: [cooked; ONION_LAYERS],
             layers,
             bounds,
         }
@@ -616,7 +650,7 @@ impl Onion {
 
 impl Entity for Onion {
     fn bounds(&self) -> Rectangle {
-        self.bounds.clone()
+        self.bounds
     }
 
     fn select(&mut self, pos: [f64; 2]) -> Selection {
@@ -640,6 +674,13 @@ impl Entity for Onion {
         } else {
             vec![]
         }
+    }
+
+    fn cooked(&self) -> [f64; 2] {
+        [
+            self.cooked.iter().cloned().fold(0./0., f64::min),
+            self.cooked.iter().cloned().fold(0./0., f64::max),
+        ]
     }
 
     fn drag(&mut self, from: [f64; 2], to: [f64; 2]) {
@@ -800,7 +841,7 @@ impl Squirt {
 
 impl Entity for Squirt {
     fn bounds(&self) -> Rectangle {
-        self.bounds.clone()
+        self.bounds
     }
 
     fn select(&mut self, pos: [f64; 2]) -> Selection {
@@ -917,5 +958,355 @@ impl Entity for Bottle {
         } else {
             Selection::None
         }
+    }
+}
+
+#[derive(Clone, Copy)]
+pub enum Mood {
+    Happy,
+    Neutral,
+    Sad,
+    Sick,
+}
+
+pub struct Customer {
+    pos: [f64; 2],
+    order: Bread,
+    meal: Option<Bread>,
+    mood: Option<Mood>,
+}
+
+impl Customer {
+    fn new(pos: [f64; 2]) -> Customer {
+        let mut order = Bread{
+            pos: [pos[0] + ORDER_OFFSET[0], pos[1] + ORDER_OFFSET[1]],
+            toppings: Vec::with_capacity(5),
+        };
+        let mut rng = rand::thread_rng();
+        
+        // Filling cooked between 0.8 and 1.2 with peak at 1.0
+        let filling_cooked: f64 = 0.8 + 0.4 * rng.sample(Beta::new(2.0, 2.0).unwrap());
+        // Onion cooked between 0.8 and 1.2 with peak at 1.0
+        let onion_cooked: f64 = 0.8 + 0.4 * rng.sample(Beta::new(2.0, 2.0).unwrap());
+        
+        let filling: f64 = rng.gen();
+        if filling < 0.5 {
+            // 50% chance of one sausage
+            order.add_topping(&(Rc::new(RefCell::new(Cookable::with_cooked(
+                Filling::Sausage,
+                pos,
+                filling_cooked,
+            ))) as Rc<RefCell<dyn Entity>>));
+        } else if filling < 0.75 {
+            // 25% chance of two sausages
+            order.add_topping(&(Rc::new(RefCell::new(Cookable::with_cooked(
+                Filling::Sausage,
+                pos,
+                filling_cooked,
+            ))) as Rc<RefCell<dyn Entity>>));
+            order.add_topping(&(Rc::new(RefCell::new(Cookable::with_cooked(
+                Filling::Sausage,
+                pos,
+                filling_cooked,
+            ))) as Rc<RefCell<dyn Entity>>));
+        } else {
+            // 25% chance of patty
+            order.add_topping(&(Rc::new(RefCell::new(Cookable::with_cooked(
+                Filling::VeggiePatty,
+                pos,
+                filling_cooked,
+            ))) as Rc<RefCell<dyn Entity>>));
+        }
+
+        // 40% chance the customer wants onion
+        if rng.sample(Bernoulli::new(0.4).unwrap()) {
+            order.add_topping(&(Rc::new(RefCell::new(Onion::with_cooked(
+                pos,
+                onion_cooked,
+            ))) as Rc<RefCell<dyn Entity>>));
+        }
+
+        let condiment: f64 = rng.gen();
+        if condiment < 0.5 {
+            // 50% chance of tomato sauce
+            order.add_topping(&(Rc::new(RefCell::new(Squirt::new(
+                Condiment::Sauce,
+                pos,
+            ))) as Rc<RefCell<dyn Entity>>));
+        } else if condiment < 0.7 {
+            // 20% chance of mustard
+            order.add_topping(&(Rc::new(RefCell::new(Squirt::new(
+                Condiment::Mustard,
+                pos,
+            ))) as Rc<RefCell<dyn Entity>>));
+        } else if condiment < 0.9 {
+            // 20% chance of tomato sauce and mustard
+            order.add_topping(&(Rc::new(RefCell::new(Squirt::new(
+                Condiment::Sauce,
+                pos,
+            ))) as Rc<RefCell<dyn Entity>>));
+            order.add_topping(&(Rc::new(RefCell::new(Squirt::new(
+                Condiment::Mustard,
+                pos,
+            ))) as Rc<RefCell<dyn Entity>>));
+        } else {
+            // 10% chance of no condiment
+        }
+
+        Customer{
+            pos,
+            order,
+            meal: None,
+            mood: None,
+        }
+    }
+}
+
+impl Entity for Customer {
+    fn bounds(&self) -> Rectangle {
+        Rectangle::centered(self.pos, PLATE_SIZE)
+    }
+
+    fn set_pos(&mut self, pos: [f64; 2]) {
+        self.pos = pos;
+        self.order.set_pos([pos[0] + ORDER_OFFSET[0], pos[1] + ORDER_OFFSET[1]]);
+        if let Some(meal) = &mut self.meal {
+            meal.set_pos(self.pos);
+        }
+    }
+
+    fn draw(&self, context: Context, graphics: &mut G2d) {
+        piston_window::ellipse(WHITE,
+                               self.bounds().as_floats(),
+                               context.transform,
+                               graphics);
+        piston_window::ellipse(LIGHT_GREY,
+                               Rectangle::centered(self.pos, [PLATE_SIZE[0] * 0.65, PLATE_SIZE[1] * 0.65]).as_floats(),
+                               context.transform,
+                               graphics);
+
+        let thought_colour = match self.mood {
+            None => WHITE,
+            Some(Mood::Happy) => HAPPY,
+            Some(Mood::Neutral) => NEUTRAL,
+            Some(Mood::Sad) => SAD,
+            Some(Mood::Sick) => SAD,
+        };
+
+        piston_window::ellipse(thought_colour,
+                               [self.pos[0] + ORDER_OFFSET[0] - 54.0, self.pos[1] + ORDER_OFFSET[1] - 30.0, 60.0, 50.0],
+                               context.transform,
+                               graphics);
+        piston_window::ellipse(thought_colour,
+                               [self.pos[0] + ORDER_OFFSET[0] - 44.0, self.pos[1] + ORDER_OFFSET[1] - 10.0, 55.0, 55.0],
+                               context.transform,
+                               graphics);
+        piston_window::ellipse(thought_colour,
+                               [self.pos[0] + ORDER_OFFSET[0] - 34.0, self.pos[1] + ORDER_OFFSET[1] - 45.0, 70.0, 52.0],
+                               context.transform,
+                               graphics);
+        piston_window::ellipse(thought_colour,
+                               [self.pos[0] + ORDER_OFFSET[0] - 4.0, self.pos[1] + ORDER_OFFSET[1] - 40.0, 50.0, 45.0],
+                               context.transform,
+                               graphics);
+        piston_window::ellipse(thought_colour,
+                               [self.pos[0] + ORDER_OFFSET[0] - 14.0, self.pos[1] + ORDER_OFFSET[1] - 15.0, 60.0, 55.0],
+                               context.transform,
+                               graphics);
+
+        piston_window::ellipse(thought_colour,
+                               [self.pos[0] + ORDER_OFFSET[0] - 50.0, self.pos[1] + ORDER_OFFSET[1] - 53.0, 14.0, 14.0],
+                               context.transform,
+                               graphics);
+        piston_window::ellipse(thought_colour,
+                               [self.pos[0] + ORDER_OFFSET[0] - 65.0, self.pos[1] + ORDER_OFFSET[1] - 74.0, 12.0, 12.0],
+                               context.transform,
+                               graphics);
+        piston_window::ellipse(thought_colour,
+                               [self.pos[0] + ORDER_OFFSET[0] - 67.0, self.pos[1] + ORDER_OFFSET[1] - 100.0, 10.0, 11.0],
+                               context.transform,
+                               graphics);
+        piston_window::ellipse(thought_colour,
+                               [self.pos[0] + ORDER_OFFSET[0] - 60.0, self.pos[1] + ORDER_OFFSET[1] - 126.0, 9.0, 10.0],
+                               context.transform,
+                               graphics);
+
+        self.order.draw(context, graphics);
+        if let Some(meal) = &self.meal {
+            meal.draw(context, graphics);
+        }
+    }
+// pub enum Topping {
+//     Filling(Filling),
+//     Onion,
+//     Condiment(Condiment),
+// }
+
+    fn deliver_order(&mut self, order: &Bread) -> Option<Mood> {
+        if self.mood.is_none() && order.bounds().intersect_rect(&self.bounds()) {
+            let mut toppings = order.toppings.clone();
+            let mut score: f64 = 0.0;
+            let mut has_filling = false;
+            let mut sick = false;
+            for topping in &self.order.toppings {
+                if let Some(i) = toppings.iter().position(|other|
+                    match (topping.borrow().topping(), other.borrow().topping()) {
+                        (Some(Topping::Filling(_)), Some(Topping::Filling(_))) => true,
+                        (Some(Topping::Onion), Some(Topping::Onion)) => true,
+                        (Some(Topping::Condiment(c1)), Some(Topping::Condiment(c2))) => c1 == c2,
+                        _ => false,
+                    }
+                ) {
+                    let other = toppings.remove(i);
+                    match topping.borrow().topping() {
+                        Some(Topping::Filling(filling)) => {
+                            if let Some(Topping::Filling(other_filling)) = other.borrow().topping() {
+                                if filling == other_filling {
+                                    has_filling = true;
+                                    if filling == Filling::Sausage {
+                                        if other.borrow().cooked()[0] < 0.7 {
+                                            sick = true;
+                                        }
+                                    }
+                                    score += 1.0 - (other.borrow().cooked()[0] - topping.borrow().cooked()[0]).powi(2).min(0.04) * 25.0
+                                                 - (other.borrow().cooked()[1] - topping.borrow().cooked()[1]).powi(2).min(0.04) * 25.0;
+                                } else {
+                                    if filling == Filling::VeggiePatty {
+                                        sick = true;
+                                    } else {
+                                        score -= 1.0;
+                                    }
+                                }
+                            } else {
+                                score -= 1.0;
+                            }
+                        },
+                        Some(Topping::Onion) => {
+                            score += 1.0 - (other.borrow().cooked()[0] - topping.borrow().cooked()[0]).powi(2).min(0.04) * 25.0
+                                         - (other.borrow().cooked()[1] - topping.borrow().cooked()[1]).powi(2).min(0.04) * 25.0;
+                        },
+                        _ => {
+                            score += 1.0;
+                        },
+                    }
+                } else {
+                    score -= 1.0
+                }
+            }
+            let mut meal = order.clone();
+            meal.set_pos(self.pos);
+            self.meal = Some(meal);
+            let mood = if sick {
+                Some(Mood::Sick)
+            } else if has_filling {
+                let score = score / (self.order.toppings.len() as f64);
+                if score > 0.1 {
+                    Some(Mood::Happy)
+                } else if score > -0.5 {
+                    Some(Mood::Neutral)
+                } else {
+                    Some(Mood::Sad)
+                }
+            } else {
+                Some(Mood::Sad)
+            };
+            self.mood = mood;
+            mood
+        } else {
+            None
+        }
+    }
+}
+
+pub struct Queue {
+    head: [f64; 2],
+    entry: [f64; 2],
+    max_len: usize,
+    customers: Vec<Customer>,
+}
+
+impl Queue {
+    pub fn new(head: [f64; 2], entry: [f64; 2], max_len: usize) -> Queue {
+        Queue{
+            head, entry, max_len,
+            customers: Vec::with_capacity(max_len),
+        }
+    }
+}
+
+impl Entity for Queue {
+    fn bounds(&self) -> Rectangle {
+        Rectangle::new([self.head[0] - 50.0, self.head[1] - 50.0], [100.0 + (self.entry[0] - self.head[0]), 100.0 + (self.entry[1] - self.head[1])])
+    }
+
+    fn draw(&self, context: Context, graphics: &mut G2d) {
+        for customer in &self.customers {
+            customer.draw(context, graphics);
+        }
+    }
+
+    // fn add_to(&mut self, pos: [f64; 2], others: &[Rc<RefCell<dyn Entity>>]) -> Selection {
+    //     if others.iter()
+    //              .filter(|e| e.borrow().topping().contains(&Topping::Condiment(self.condiment)))
+    //              .next()
+    //              .is_none() {
+    //         Selection::New(Rc::new(RefCell::new(Squirt::new(self.condiment, pos))))
+    //     } else {
+    //         Selection::None
+    //     }
+    // }
+
+    fn update(&mut self, dt: f64) -> Vec<Rc<RefCell<dyn Entity>>> {
+        if self.customers.len() < self.max_len && rand::random::<f64>() < dt * CUSTOMERS_PER_SECOND {
+            self.customers.push(Customer::new(self.entry));
+        }
+
+        let del = [self.head[0] - self.entry[0], self.head[1] - self.entry[1]];
+        let norm = (del[0] * del[0] + del[1] * del[1]).sqrt();
+        let del = [del[0] / norm, del[1] / norm];
+        let head = self.head;
+        self.customers.iter_mut().fold(None as Option<&Customer>, |prev, customer| {
+            if customer.mood.is_none() {
+                let target = if let Some(prev) = prev {
+                    [prev.pos[0] - del[0] * QUEUE_SPACING, prev.pos[1] - del[1] * QUEUE_SPACING]
+                } else {
+                    head
+                };
+                let maxdel = [target[0] - customer.pos[0], target[1] - customer.pos[1]];
+                if maxdel[0] / del[0] > 0.0 {
+                    if maxdel[0] / del[0] > QUEUE_SPEED * dt {
+                        customer.set_pos([
+                            customer.pos[0] + del[0] * QUEUE_SPEED * dt,
+                            customer.pos[1] + del[1] * QUEUE_SPEED * dt,
+                        ]);
+                    } else {
+                        customer.set_pos(target);
+                    }
+                }
+                Some(customer)
+            } else {
+                customer.set_pos([
+                    customer.pos[0],
+                    customer.pos[1] - QUEUE_SPEED * dt * 2.0,
+                ]);
+                if customer.pos[1] > head[1] - 60.0 {
+                    Some(customer)
+                } else {
+                    prev
+                }
+            }
+        });
+        self.customers.retain(|c| c.mood.is_none() || c.pos[1] > head[1] - 200.0);
+    
+        vec![]
+    }
+
+    fn deliver_order(&mut self, order: &Bread) -> Option<Mood> {
+        for customer in &mut self.customers {
+            if let Some(mood) = customer.deliver_order(order) {
+                return Some(mood);
+            }
+        }
+        None
     }
 }

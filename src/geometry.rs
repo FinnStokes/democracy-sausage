@@ -1,4 +1,4 @@
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct Rectangle([f64; 4]);
 
 impl Rectangle {
