@@ -4,36 +4,36 @@ use std::cell::RefCell;
 use crate::geometry::Rectangle;
 use crate::colour::interpolate_colour;
 
-use piston_window::{context::Context,G2d};
+use piston_window::{context::Context,Graphics};
 use noise::{Seedable, NoiseFn};
 use rand::{Rng,distributions::Bernoulli};
 use rand_distr::Beta;
 
-pub enum Selection {
+pub enum Selection<G: Graphics> {
     None,
     This,
-    New(Rc<RefCell<dyn Entity>>),
+    New(Rc<RefCell<dyn Entity<G>>>),
 }
 
-pub trait Entity {
+pub trait Entity<G: Graphics> {
     fn bounds(&self) -> Rectangle;
-    fn select(&mut self, _pos: [f64; 2]) -> Selection { Selection::None }
-    fn update(&mut self, _dt: f64) -> Vec<Rc<RefCell<dyn Entity>>> { vec![] }
+    fn select(&mut self, _pos: [f64; 2]) -> Selection<G> { Selection::None }
+    fn update(&mut self, _dt: f64) -> Vec<Rc<RefCell<dyn Entity<G>>>> { vec![] }
     fn update_selected(&mut self, _dt: f64) {}
     fn grab(&mut self) {}
     fn drop(&mut self) {}
     fn drag(&mut self, _from: [f64; 2], _to: [f64; 2]) {}
-    fn draw(&self, context: Context, graphics: &mut G2d);
+    fn draw(&self, context: Context, graphics: &mut G);
     fn set_pos(&mut self, _pos: [f64; 2]) {}
     fn topping(&self) -> Option<Topping> { None }
-    fn add_topping(&mut self, _topping: &Rc<RefCell<dyn Entity>>) -> Selection { Selection::None }
-    fn add_to(&mut self, _pos: [f64; 2], _others: &[Rc<RefCell<dyn Entity>>]) -> Selection { Selection::None }
+    fn add_topping(&mut self, _topping: &Rc<RefCell<dyn Entity<G>>>) -> Selection<G> { Selection::None }
+    fn add_to(&mut self, _pos: [f64; 2], _others: &[Rc<RefCell<dyn Entity<G>>>]) -> Selection<G> { Selection::None }
     fn set_heat(&mut self, _heat: f64) {}
     fn heat(&self, _pos: [f64; 2]) -> f64 { 0.0 }
     fn cooked(&self) -> [f64; 2] { [0.0, 0.0] }
     fn expired(&self) -> bool { false }
-    fn order(&self) -> Option<&Bread> { None }
-    fn deliver_order(&mut self, _order: &Bread) -> Option<Mood> { None }
+    fn order(&self) -> Option<&Bread<G>> { None }
+    fn deliver_order(&mut self, _order: &Bread<G>) -> Option<Mood> { None }
 }
 
 const SAUSAGE_SIZE: [f64; 2] = [13.0, 65.0];
@@ -115,7 +115,7 @@ impl Cookable {
     }
 }
 
-impl Entity for Cookable {
+impl<G: Graphics> Entity<G> for Cookable {
     fn bounds(&self) -> Rectangle {
         match self.kind {
             Filling::Sausage => Rectangle::centered(self.pos, SAUSAGE_SIZE),
@@ -123,21 +123,21 @@ impl Entity for Cookable {
         }
     }
 
-    fn select(&mut self, pos: [f64; 2]) -> Selection {
-        if self.bounds().intersect_point(pos) {
+    fn select(&mut self, pos: [f64; 2]) -> Selection<G> {
+        if Entity::<G>::bounds(self).intersect_point(pos) {
             Selection::This
         } else {
             Selection::None
         }
     }
 
-    fn update(&mut self, dt: f64) -> Vec<Rc<RefCell<dyn Entity>>> {
+    fn update(&mut self, dt: f64) -> Vec<Rc<RefCell<dyn Entity<G>>>> {
         self.bottom_cooked += dt * self.heat * match self.kind {
             Filling::Sausage => 1.0,
             Filling::VeggiePatty => 0.5,
         };
         if rand::random::<f64>() < dt * self.heat * 20.0 {
-            let bounds = self.bounds().as_floats();
+            let bounds = Entity::<G>::bounds(self).as_floats();
             vec![Rc::new(RefCell::new(Smoke::new([
                 bounds[0] + rand::random::<f64>() * bounds[2],
                 bounds[1] + rand::random::<f64>() * bounds[3],
@@ -176,18 +176,18 @@ impl Entity for Cookable {
         self.heat = heat;
     }
 
-    fn draw(&self, context: Context, graphics: &mut G2d) {
+    fn draw(&self, context: Context, graphics: &mut G) {
         match self.kind {
             Filling::Sausage => {
                 let color = interpolate_colour(&[(PINK, 0.0), (BROWN, 1.0), (BLACK, 1.4)], self.top_cooked as f32);
                 piston_window::rectangle(color,
-                                         self.bounds().as_floats(),
+                                         Entity::<G>::bounds(self).as_floats(),
                                          context.transform,
                                          graphics);
             },
             Filling::VeggiePatty => {
                 let color = interpolate_colour(&[(YELLOW, 0.0), (ORANGE, 1.0), (BLACK, 1.4)], self.top_cooked as f32);
-                let bounds = self.bounds().as_floats();
+                let bounds = Entity::<G>::bounds(self).as_floats();
                 rounded_rectangle(color,
                                   bounds,
                                   10.0,
@@ -214,7 +214,7 @@ impl Entity for Cookable {
         Some(Topping::Filling(self.kind))
     }
 
-    fn add_to(&mut self, pos: [f64; 2], others: &[Rc<RefCell<dyn Entity>>]) -> Selection {
+    fn add_to(&mut self, pos: [f64; 2], others: &[Rc<RefCell<dyn Entity<G>>>]) -> Selection<G> {
         let mut other_fillings = others.iter()
             .filter(|e| if let Some(Topping::Filling(_)) = e.borrow().topping() {
                 true
@@ -223,7 +223,7 @@ impl Entity for Cookable {
             });
         match other_fillings.next() {
             None => {
-                self.set_pos(pos);
+                Entity::<G>::set_pos(self, pos);
                 Selection::This
             },
             Some(f) => if f.borrow().topping().contains(&Topping::Filling(Filling::Sausage)) && self.kind == Filling::Sausage {
@@ -255,14 +255,14 @@ impl Hotplate {
     }
 }
 
-impl Entity for Hotplate {
+impl<G: Graphics> Entity<G> for Hotplate {
     fn bounds(&self) -> Rectangle {
         self.bounds
     }
 
-    fn draw(&self, context: Context, graphics: &mut G2d) {
+    fn draw(&self, context: Context, graphics: &mut G) {
         piston_window::rectangle([0.2, 0.15, 0.25, 1.0],
-                                 self.bounds().as_floats(),
+                                 Entity::<G>::bounds(self).as_floats(),
                                  context.transform,
                                  graphics);
         // let bounds = self.bounds().as_floats();
@@ -284,7 +284,7 @@ impl Entity for Hotplate {
         if !self.bounds.intersect_point(pos) {
             0.0
         } else {
-            let bounds = self.bounds().as_floats();
+            let bounds = Entity::<G>::bounds(self).as_floats();
             let x = (pos[0] - bounds[0]) / bounds[2];
             let y = (pos[1] - bounds[1]) / bounds[3];
 
@@ -307,7 +307,7 @@ impl Table {
     }
 }
 
-fn rounded_rectangle(colour: [f32; 4], bounds: [f64; 4], r: f64, transform: [[f64; 3]; 2], graphics: &mut G2d) {
+fn rounded_rectangle<G: Graphics>(colour: [f32; 4], bounds: [f64; 4], r: f64, transform: [[f64; 3]; 2], graphics: &mut G) {
     piston_window::rectangle(colour,
                              [bounds[0] + r, bounds[1], bounds[2] - 2.0 * r, bounds[3]],
                              transform,
@@ -334,28 +334,27 @@ fn rounded_rectangle(colour: [f32; 4], bounds: [f64; 4], r: f64, transform: [[f6
                            graphics);
 }
 
-impl Entity for Table {
+impl<G: Graphics> Entity<G> for Table {
     fn bounds(&self) -> Rectangle {
         self.bounds
     }
 
-    fn draw(&self, context: Context, graphics: &mut G2d) {
+    fn draw(&self, context: Context, graphics: &mut G) {
         rounded_rectangle([0.95, 1.0, 1.0, 1.0],
-                          self.bounds().as_floats(),
+                          Entity::<G>::bounds(self).as_floats(),
                           25.0,
                           context.transform,
                           graphics);
     }
 }
 
-#[derive(Clone)]
-pub struct Bread {
+pub struct Bread<G: Graphics> {
     pos: [f64; 2],
-    toppings: Vec<Rc<RefCell<dyn Entity>>>,
+    toppings: Vec<Rc<RefCell<dyn Entity<G>>>>,
 }
 
-impl Bread {
-    pub fn new(pos: [f64; 2]) -> Bread {
+impl<G: Graphics> Bread<G> {
+    pub fn new(pos: [f64; 2]) -> Bread<G> {
         Bread{
             pos,
             toppings: Vec::new(),
@@ -363,12 +362,21 @@ impl Bread {
     }
 }
 
-impl Entity for Bread {
+impl<G: Graphics> Clone for Bread<G> {
+    fn clone(&self) -> Bread<G> {
+        Bread{
+            pos: self.pos,
+            toppings: self.toppings.clone(),
+        }
+    }
+}
+
+impl<G: Graphics> Entity<G> for Bread<G> {
     fn bounds(&self) -> Rectangle {
         Rectangle::centered(self.pos, BREAD_SIZE)
     }
 
-    fn select(&mut self, pos: [f64; 2]) -> Selection {
+    fn select(&mut self, pos: [f64; 2]) -> Selection<G> {
         if self.bounds().intersect_point(pos) {
             Selection::This
         } else {
@@ -389,7 +397,7 @@ impl Entity for Bread {
         self.drag(self.pos, pos);
     }
 
-    fn draw(&self, context: Context, graphics: &mut G2d) {
+    fn draw(&self, context: Context, graphics: &mut G) {
         let inner_size = Rectangle::centered(self.pos, [BREAD_SIZE[0] - 6.0, BREAD_SIZE[1] - 6.0]);
         piston_window::rectangle([194.0 / 255.0, 153.0 / 255.0, 26.0 / 255.0, 1.0],
                                  self.bounds().as_floats(),
@@ -404,7 +412,7 @@ impl Entity for Bread {
         }
     }
 
-    fn add_topping(&mut self, topping: &Rc<RefCell<dyn Entity>>) -> Selection {
+    fn add_topping(&mut self, topping: &Rc<RefCell<dyn Entity<G>>>) -> Selection<G> {
         let res = topping.borrow_mut().add_to(self.pos, &self.toppings);
         match &res {
             Selection::This => {
@@ -418,7 +426,7 @@ impl Entity for Bread {
         res
     }
 
-    fn order(&self) -> Option<&Bread> {
+    fn order(&self) -> Option<&Bread<G>> {
         Some(self)
     }
 }
@@ -435,13 +443,13 @@ impl Smoke {
     }
 }
 
-impl Entity for Smoke {
+impl<G: Graphics> Entity<G> for Smoke {
     fn bounds(&self) -> Rectangle {
         let r = 10.0 + self.age * 5.0;
         Rectangle::centered(self.pos, [2.0 * r, 2.0 * r])
     }
 
-    fn update(&mut self, dt: f64) -> Vec<Rc<RefCell<dyn Entity>>> {
+    fn update(&mut self, dt: f64) -> Vec<Rc<RefCell<dyn Entity<G>>>> {
         self.age += dt;
         self.pos = [self.pos[0] + dt * 20.0, self.pos[1] + dt * 10.0];
         vec![]
@@ -451,9 +459,9 @@ impl Entity for Smoke {
         self.age > 5.0
     }
 
-    fn draw(&self, context: Context, graphics: &mut G2d) {
+    fn draw(&self, context: Context, graphics: &mut G) {
         piston_window::ellipse([self.colour, self.colour, self.colour, 0.5 * (1.0 - (self.age as f32 / 5.0)).max(0.0)],
-                               self.bounds().as_floats(),
+                               Entity::<G>::bounds(self).as_floats(),
                                context.transform,
                                graphics);
     }
@@ -475,7 +483,7 @@ impl ChoppingBoard {
     }
 }
 
-fn knife(centre: [f64; 2], transform: [[f64; 3]; 2], graphics: &mut G2d) {
+fn knife<G: Graphics>(centre: [f64; 2], transform: [[f64; 3]; 2], graphics: &mut G) {
     piston_window::polygon([145.0 / 255.0, 145.0 / 255.0, 145.0 / 255.0, 1.0],
                            &[[centre[0] - 60.0, centre[1] - 48.0],
                              [centre[0] - 30.0, centre[1] - 50.0],
@@ -510,13 +518,13 @@ pub fn interpolate_path(points: &[([f64; 2], f64)], point: f64) -> [f64; 2] {
     }
 }
 
-impl Entity for ChoppingBoard {
+impl<G: Graphics> Entity<G> for ChoppingBoard {
     fn bounds(&self) -> Rectangle {
         Rectangle::centered(self.pos, [90.0, 120.0])
     }
 
-    fn select(&mut self, pos: [f64; 2]) -> Selection {
-        if self.bounds().intersect_point(pos) {
+    fn select(&mut self, pos: [f64; 2]) -> Selection<G> {
+        if Entity::<G>::bounds(self).intersect_point(pos) {
             if self.progress < 1.0 {
                 Selection::This
             } else if let Some(onion) = self.onions.pop() {
@@ -537,13 +545,13 @@ impl Entity for ChoppingBoard {
         self.progress = (self.progress + dt * CHOP_SPEED).min(1.0);
     }
 
-    fn draw(&self, context: Context, graphics: &mut G2d) {
+    fn draw(&self, context: Context, graphics: &mut G) {
         rounded_rectangle(BOARD,
-                          self.bounds().as_floats(),
+                          Entity::<G>::bounds(self).as_floats(),
                           2.0,
                           context.transform,
                           graphics);
-        let centre = self.bounds().centre();
+        let centre = Entity::<G>::bounds(self).centre();
         if self.progress < 1.0 {
             let size = [50.0, 45.0];
             let onion = Rectangle::centered(centre, size);
@@ -648,25 +656,25 @@ impl Onion {
     }
 }
 
-impl Entity for Onion {
+impl<G: Graphics> Entity<G> for Onion {
     fn bounds(&self) -> Rectangle {
         self.bounds
     }
 
-    fn select(&mut self, pos: [f64; 2]) -> Selection {
-        if self.bounds().intersect_point(pos) {
+    fn select(&mut self, pos: [f64; 2]) -> Selection<G> {
+        if Entity::<G>::bounds(self).intersect_point(pos) {
             Selection::This
         } else {
             Selection::None
         }
     }
 
-    fn update(&mut self, dt: f64) -> Vec<Rc<RefCell<dyn Entity>>> {
+    fn update(&mut self, dt: f64) -> Vec<Rc<RefCell<dyn Entity<G>>>> {
         for i in 0..ONION_LAYERS {
             self.cooked[i] += dt * self.heat * [1.0, 0.6, 0.3, 0.1][i];
         }
         if rand::random::<f64>() < dt * self.heat * 20.0 {
-            let bounds = self.bounds().as_floats();
+            let bounds = Entity::<G>::bounds(self).as_floats();
             vec![Rc::new(RefCell::new(Smoke::new([
                 bounds[0] + rand::random::<f64>() * bounds[2],
                 bounds[1] + rand::random::<f64>() * bounds[3],
@@ -684,7 +692,7 @@ impl Entity for Onion {
     }
 
     fn drag(&mut self, from: [f64; 2], to: [f64; 2]) {
-        let mut bounds = self.bounds().as_floats();
+        let mut bounds = Entity::<G>::bounds(self).as_floats();
         for i in 0..2 {
             self.pos[i] += to[i] - from[i];
             bounds[i] += to[i] - from[i];
@@ -693,7 +701,7 @@ impl Entity for Onion {
     }
 
     fn set_pos(&mut self, pos: [f64; 2]) {
-        self.drag(self.pos, pos);
+        Entity::<G>::drag(self, self.pos, pos);
     }
 
     fn drop(&mut self) {
@@ -709,19 +717,19 @@ impl Entity for Onion {
         Some(Topping::Onion)
     }
 
-    fn add_to(&mut self, pos: [f64; 2], others: &[Rc<RefCell<dyn Entity>>]) -> Selection {
+    fn add_to(&mut self, pos: [f64; 2], others: &[Rc<RefCell<dyn Entity<G>>>]) -> Selection<G> {
         if others.iter()
                  .filter(|e| e.borrow().topping().contains(&Topping::Onion))
                  .next()
                  .is_none() {
-            self.set_pos(pos);
+            Entity::<G>::set_pos(self, pos);
             Selection::This
         } else {
             Selection::None
         }
     }
 
-    fn draw(&self, context: Context, graphics: &mut G2d) {
+    fn draw(&self, context: Context, graphics: &mut G) {
         for (layer, cooked) in self.layers.iter().zip(&self.cooked) {
             let colour = interpolate_colour(&[(RAW_ONION, 0.0), (COOKED_ONION, 1.0), (BLACK, 1.4)], *cooked as f32);
             for piece in layer {
@@ -784,7 +792,7 @@ impl OnionPiece {
         Rectangle::new([pos[0] + self.rect[0] + self.rect[2] / 2.0 + xmin, pos[1] + self.rect[1] + self.rect[3] / 2.0 + ymin], [xmax - xmin, ymax - ymin])
     }
 
-    fn draw(&self, pos: [f64; 2], colour: [f32; 4], context: Context, graphics: &mut G2d) {
+    fn draw<G: Graphics>(&self, pos: [f64; 2], colour: [f32; 4], context: Context, graphics: &mut G) {
         piston_window::circle_arc(
             colour,
             self.thickness,
@@ -839,13 +847,13 @@ impl Squirt {
     }
 }
 
-impl Entity for Squirt {
+impl<G: Graphics> Entity<G> for Squirt {
     fn bounds(&self) -> Rectangle {
         self.bounds
     }
 
-    fn select(&mut self, pos: [f64; 2]) -> Selection {
-        if self.bounds().intersect_point(pos) {
+    fn select(&mut self, pos: [f64; 2]) -> Selection<G> {
+        if Entity::<G>::bounds(self).intersect_point(pos) {
             Selection::This
         } else {
             Selection::None
@@ -853,7 +861,7 @@ impl Entity for Squirt {
     }
 
     fn drag(&mut self, from: [f64; 2], to: [f64; 2]) {
-        let mut bounds = self.bounds().as_floats();
+        let mut bounds = Entity::<G>::bounds(self).as_floats();
         for i in 0..2 {
             self.pos[i] += to[i] - from[i];
             bounds[i] += to[i] - from[i];
@@ -862,26 +870,26 @@ impl Entity for Squirt {
     }
 
     fn set_pos(&mut self, pos: [f64; 2]) {
-        self.drag(self.pos, pos);
+        Entity::<G>::drag(self, self.pos, pos);
     }
 
     fn topping(&self) -> Option<Topping> {
         Some(Topping::Condiment(self.condiment))
     }
 
-    fn add_to(&mut self, pos: [f64; 2], others: &[Rc<RefCell<dyn Entity>>]) -> Selection {
+    fn add_to(&mut self, pos: [f64; 2], others: &[Rc<RefCell<dyn Entity<G>>>]) -> Selection<G> {
         if others.iter()
                  .filter(|e| e.borrow().topping().contains(&Topping::Condiment(self.condiment)))
                  .next()
                  .is_none() {
-            self.set_pos(pos);
+            Entity::<G>::set_pos(self, pos);
             Selection::This
         } else {
             Selection::None
         }
     }
 
-    fn draw(&self, context: Context, graphics: &mut G2d) {
+    fn draw(&self, context: Context, graphics: &mut G) {
         for blob in &self.blobs {
             piston_window::ellipse(self.condiment.colour(),
                                    blob.bounds(self.pos).as_floats(),
@@ -908,13 +916,13 @@ impl Bottle {
     }
 }
 
-impl Entity for Bottle {
+impl<G: Graphics> Entity<G> for Bottle {
     fn bounds(&self) -> Rectangle {
         Rectangle::centered(self.pos, [20.0, 80.0])
     }
 
-    fn select(&mut self, pos: [f64; 2]) -> Selection {
-        if self.bounds().intersect_point(pos) {
+    fn select(&mut self, pos: [f64; 2]) -> Selection<G> {
+        if Entity::<G>::bounds(self).intersect_point(pos) {
             Selection::This
         } else {
             Selection::None
@@ -931,7 +939,7 @@ impl Entity for Bottle {
         self.pos = pos;
     }
 
-    fn draw(&self, context: Context, graphics: &mut G2d) {
+    fn draw(&self, context: Context, graphics: &mut G) {
         piston_window::rectangle(self.condiment.colour(),
                                  [self.pos[0] - 10.0, self.pos[1] - 25.0, 20.0, 65.0],
                                  context.transform,
@@ -949,7 +957,7 @@ impl Entity for Bottle {
         Some(Topping::Condiment(self.condiment))
     }
 
-    fn add_to(&mut self, pos: [f64; 2], others: &[Rc<RefCell<dyn Entity>>]) -> Selection {
+    fn add_to(&mut self, pos: [f64; 2], others: &[Rc<RefCell<dyn Entity<G>>>]) -> Selection<G> {
         if others.iter()
                  .filter(|e| e.borrow().topping().contains(&Topping::Condiment(self.condiment)))
                  .next()
@@ -969,15 +977,15 @@ pub enum Mood {
     Sick,
 }
 
-pub struct Customer {
+pub struct Customer<G: Graphics> {
     pos: [f64; 2],
-    order: Bread,
-    meal: Option<Bread>,
+    order: Bread<G>,
+    meal: Option<Bread<G>>,
     mood: Option<Mood>,
 }
 
-impl Customer {
-    fn new(pos: [f64; 2]) -> Customer {
+impl<G: Graphics> Customer<G> {
+    fn new(pos: [f64; 2]) -> Customer<G> {
         let mut order = Bread{
             pos: [pos[0] + ORDER_OFFSET[0], pos[1] + ORDER_OFFSET[1]],
             toppings: Vec::with_capacity(5),
@@ -996,26 +1004,26 @@ impl Customer {
                 Filling::Sausage,
                 pos,
                 filling_cooked,
-            ))) as Rc<RefCell<dyn Entity>>));
+            ))) as Rc<RefCell<dyn Entity<G>>>));
         } else if filling < 0.75 {
             // 25% chance of two sausages
             order.add_topping(&(Rc::new(RefCell::new(Cookable::with_cooked(
                 Filling::Sausage,
                 pos,
                 filling_cooked,
-            ))) as Rc<RefCell<dyn Entity>>));
+            ))) as Rc<RefCell<dyn Entity<G>>>));
             order.add_topping(&(Rc::new(RefCell::new(Cookable::with_cooked(
                 Filling::Sausage,
                 pos,
                 filling_cooked,
-            ))) as Rc<RefCell<dyn Entity>>));
+            ))) as Rc<RefCell<dyn Entity<G>>>));
         } else {
             // 25% chance of patty
             order.add_topping(&(Rc::new(RefCell::new(Cookable::with_cooked(
                 Filling::VeggiePatty,
                 pos,
                 filling_cooked,
-            ))) as Rc<RefCell<dyn Entity>>));
+            ))) as Rc<RefCell<dyn Entity<G>>>));
         }
 
         // 40% chance the customer wants onion
@@ -1023,7 +1031,7 @@ impl Customer {
             order.add_topping(&(Rc::new(RefCell::new(Onion::with_cooked(
                 pos,
                 onion_cooked,
-            ))) as Rc<RefCell<dyn Entity>>));
+            ))) as Rc<RefCell<dyn Entity<G>>>));
         }
 
         let condiment: f64 = rng.gen();
@@ -1032,23 +1040,23 @@ impl Customer {
             order.add_topping(&(Rc::new(RefCell::new(Squirt::new(
                 Condiment::Sauce,
                 pos,
-            ))) as Rc<RefCell<dyn Entity>>));
+            ))) as Rc<RefCell<dyn Entity<G>>>));
         } else if condiment < 0.7 {
             // 20% chance of mustard
             order.add_topping(&(Rc::new(RefCell::new(Squirt::new(
                 Condiment::Mustard,
                 pos,
-            ))) as Rc<RefCell<dyn Entity>>));
+            ))) as Rc<RefCell<dyn Entity<G>>>));
         } else if condiment < 0.9 {
             // 20% chance of tomato sauce and mustard
             order.add_topping(&(Rc::new(RefCell::new(Squirt::new(
                 Condiment::Sauce,
                 pos,
-            ))) as Rc<RefCell<dyn Entity>>));
+            ))) as Rc<RefCell<dyn Entity<G>>>));
             order.add_topping(&(Rc::new(RefCell::new(Squirt::new(
                 Condiment::Mustard,
                 pos,
-            ))) as Rc<RefCell<dyn Entity>>));
+            ))) as Rc<RefCell<dyn Entity<G>>>));
         } else {
             // 10% chance of no condiment
         }
@@ -1062,7 +1070,7 @@ impl Customer {
     }
 }
 
-impl Entity for Customer {
+impl<G: Graphics> Entity<G> for Customer<G> {
     fn bounds(&self) -> Rectangle {
         Rectangle::centered(self.pos, PLATE_SIZE)
     }
@@ -1075,7 +1083,7 @@ impl Entity for Customer {
         }
     }
 
-    fn draw(&self, context: Context, graphics: &mut G2d) {
+    fn draw(&self, context: Context, graphics: &mut G) {
         piston_window::ellipse(WHITE,
                                self.bounds().as_floats(),
                                context.transform,
@@ -1142,7 +1150,7 @@ impl Entity for Customer {
 //     Condiment(Condiment),
 // }
 
-    fn deliver_order(&mut self, order: &Bread) -> Option<Mood> {
+    fn deliver_order(&mut self, order: &Bread<G>) -> Option<Mood> {
         if self.mood.is_none() && order.bounds().intersect_rect(&self.bounds()) {
             let mut toppings = order.toppings.clone();
             let mut score: f64 = 0.0;
@@ -1222,7 +1230,7 @@ impl Entity for Customer {
                     burnt += 1
                 }
             }
-            let mut meal = order.clone();
+            let mut meal: Bread<G> = (*order).clone();
             meal.set_pos(self.pos);
             self.meal = Some(meal);
             let mood = if sick {
@@ -1247,15 +1255,15 @@ impl Entity for Customer {
     }
 }
 
-pub struct Queue {
+pub struct Queue<G: Graphics> {
     head: [f64; 2],
     entry: [f64; 2],
     max_len: usize,
-    customers: Vec<Customer>,
+    customers: Vec<Customer<G>>,
 }
 
-impl Queue {
-    pub fn new(head: [f64; 2], entry: [f64; 2], max_len: usize) -> Queue {
+impl<G: Graphics> Queue<G> {
+    pub fn new(head: [f64; 2], entry: [f64; 2], max_len: usize) -> Queue<G> {
         Queue{
             head, entry, max_len,
             customers: Vec::with_capacity(max_len),
@@ -1263,18 +1271,18 @@ impl Queue {
     }
 }
 
-impl Entity for Queue {
+impl<G: Graphics> Entity<G> for Queue<G> {
     fn bounds(&self) -> Rectangle {
         Rectangle::new([self.head[0] - 50.0, self.head[1] - 50.0], [100.0 + (self.entry[0] - self.head[0]), 100.0 + (self.entry[1] - self.head[1])])
     }
 
-    fn draw(&self, context: Context, graphics: &mut G2d) {
+    fn draw(&self, context: Context, graphics: &mut G) {
         for customer in &self.customers {
             customer.draw(context, graphics);
         }
     }
 
-    // fn add_to(&mut self, pos: [f64; 2], others: &[Rc<RefCell<dyn Entity>>]) -> Selection {
+    // fn add_to(&mut self, pos: [f64; 2], others: &[Rc<RefCell<dyn Entity<G>>>]) -> Selection<G> {
     //     if others.iter()
     //              .filter(|e| e.borrow().topping().contains(&Topping::Condiment(self.condiment)))
     //              .next()
@@ -1285,7 +1293,7 @@ impl Entity for Queue {
     //     }
     // }
 
-    fn update(&mut self, dt: f64) -> Vec<Rc<RefCell<dyn Entity>>> {
+    fn update(&mut self, dt: f64) -> Vec<Rc<RefCell<dyn Entity<G>>>> {
         if self.customers.len() < self.max_len && rand::random::<f64>() < dt * CUSTOMERS_PER_SECOND {
             self.customers.push(Customer::new(self.entry));
         }
@@ -1294,7 +1302,7 @@ impl Entity for Queue {
         let norm = (del[0] * del[0] + del[1] * del[1]).sqrt();
         let del = [del[0] / norm, del[1] / norm];
         let head = self.head;
-        self.customers.iter_mut().fold(None as Option<&Customer>, |prev, customer| {
+        self.customers.iter_mut().fold(None as Option<&Customer<G>>, |prev, customer| {
             if customer.mood.is_none() {
                 let target = if let Some(prev) = prev {
                     [prev.pos[0] - del[0] * QUEUE_SPACING, prev.pos[1] - del[1] * QUEUE_SPACING]
@@ -1330,7 +1338,7 @@ impl Entity for Queue {
         vec![]
     }
 
-    fn deliver_order(&mut self, order: &Bread) -> Option<Mood> {
+    fn deliver_order(&mut self, order: &Bread<G>) -> Option<Mood> {
         for customer in &mut self.customers {
             if let Some(mood) = customer.deliver_order(order) {
                 return Some(mood);

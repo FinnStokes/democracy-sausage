@@ -1,15 +1,15 @@
-use piston_window::{context::Context,G2d};
+use piston_window::{context::Context,Graphics};
 
 use crate::entity::{Entity, Selection, Cookable, Filling, Bread, Hotplate, Table, Bottle, Condiment, ChoppingBoard, Queue};
 
 use std::cell::RefCell;
 use std::rc::Rc;
 
-pub struct Scene(Vec<Rc<RefCell<dyn Entity>>>);
+pub struct Scene<G: Graphics>(Vec<Rc<RefCell<dyn Entity<G>>>>);
 
-impl Scene {
-    pub fn new() -> Scene {
-        let hotplates: Vec<Rc<RefCell<dyn Entity>>> = vec![
+impl<G: Graphics + 'static> Scene<G> {
+    pub fn new() -> Scene<G> {
+        let hotplates: Vec<Rc<RefCell<dyn Entity<G>>>> = vec![
             Rc::new(RefCell::new(Hotplate::new([200.0, 200.0], [420.0, 200.0], rand::random()))),
         ];
         Scene(vec![
@@ -32,7 +32,7 @@ impl Scene {
         ])
     }
 
-    pub fn draw(&self, context: Context, graphics: &mut G2d) {
+    pub fn draw(&self, context: Context, graphics: &mut G) {
         for e in self.0.iter() {
             e.borrow().draw(context, graphics);
         }
@@ -47,10 +47,10 @@ impl Scene {
         self.0.append(&mut new);
     }
 
-    pub fn select(&mut self, pos: [f64; 2]) -> Option<Rc<RefCell<dyn Entity>>> {
-        enum Action {
-            Return(Rc<RefCell<dyn Entity>>),
-            Append(Rc<RefCell<dyn Entity>>),
+    pub fn select(&mut self, pos: [f64; 2]) -> Option<Rc<RefCell<dyn Entity<G>>>> {
+        enum Action<G: Graphics> {
+            Return(Rc<RefCell<dyn Entity<G>>>),
+            Append(Rc<RefCell<dyn Entity<G>>>),
         }
 
         match self.0.iter().rev().find_map(|e| {
@@ -69,13 +69,13 @@ impl Scene {
         }
     }
 
-    pub fn grabbed(&mut self, entity: &Rc<RefCell<dyn Entity>>) {
+    pub fn grabbed(&mut self, entity: &Rc<RefCell<dyn Entity<G>>>) {
         let n = self.0.iter().enumerate().filter(|(_, e)| Rc::ptr_eq(e, entity)).next().unwrap().0;
         let e = self.0.remove(n);
         self.0.push(e);
     }
 
-    pub fn dropped(&mut self, entity: &Rc<RefCell<dyn Entity>>) {
+    pub fn dropped(&mut self, entity: &Rc<RefCell<dyn Entity<G>>>) {
         if !entity.borrow().topping().is_none() {
             for e in self.0.iter().rev().filter(|e| !Rc::ptr_eq(e, entity) && e.borrow().bounds().intersect_rect(&entity.borrow().bounds())) {
                 let res = e.borrow_mut().add_topping(entity);
