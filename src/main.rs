@@ -47,21 +47,21 @@ fn main() {
             scene.draw(context, graphics);
             if letterbox_v > 0.0 {
                 piston_window::rectangle([0.0, 0.0, 0.0, 1.0],
-                                         [0.0, -letterbox_v, 640.0, letterbox_v],
+                                         [0.0, -2.0 * letterbox_v, 640.0, 2.0 * letterbox_v],
                                          context.transform,
                                          graphics);
                 piston_window::rectangle([0.0, 0.0, 0.0, 1.0],
-                                         [0.0, 480.0, 640.0, letterbox_v],
+                                         [0.0, 480.0, 640.0, 2.0 * letterbox_v],
                                          context.transform,
                                          graphics);
             }
             if letterbox_h > 0.0 {
                 piston_window::rectangle([0.0, 0.0, 0.0, 1.0],
-                                         [-letterbox_h, 0.0, letterbox_h, 480.0],
+                                         [-2.0 * letterbox_h, 0.0, 2.0 * letterbox_h, 480.0],
                                          context.transform,
                                          graphics);
                 piston_window::rectangle([0.0, 0.0, 0.0, 1.0],
-                                         [640.0, 0.0, letterbox_h, 480.0],
+                                         [640.0, 0.0, 2.0 * letterbox_h, 480.0],
                                          context.transform,
                                          graphics);
             }
