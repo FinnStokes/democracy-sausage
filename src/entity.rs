@@ -1148,6 +1148,9 @@ impl Entity for Customer {
             let mut score: f64 = 0.0;
             let mut has_filling = false;
             let mut sick = false;
+            let mut missing: u32 = 0;
+            let mut wrong: u32 = 0;
+            let mut burnt: u32 = 0;
             for topping in &self.order.toppings {
                 if let Some(i) = toppings.iter().position(|other|
                     match (topping.borrow().topping(), other.borrow().topping()) {
@@ -1168,29 +1171,55 @@ impl Entity for Customer {
                                             sick = true;
                                         }
                                     }
+                                    if other.borrow().cooked()[1] > 1.4 {
+                                        burnt += 1
+                                    }
+                                    if other.borrow().cooked()[0] > 1.4 {
+                                        burnt += 1
+                                    }
                                     score += 1.0 - (other.borrow().cooked()[0] - topping.borrow().cooked()[0]).powi(2).min(0.04) * 25.0
                                                  - (other.borrow().cooked()[1] - topping.borrow().cooked()[1]).powi(2).min(0.04) * 25.0;
                                 } else {
                                     if filling == Filling::VeggiePatty {
                                         sick = true;
                                     } else {
-                                        score -= 1.0;
+                                        missing += 1;
+                                        wrong += 1;
                                     }
                                 }
                             } else {
-                                score -= 1.0;
+                                panic!();
                             }
                         },
                         Some(Topping::Onion) => {
+                            if other.borrow().cooked()[1] > 1.4 {
+                                burnt += 1
+                            }
+                            if other.borrow().cooked()[0] > 1.4 {
+                                burnt += 1
+                            }
                             score += 1.0 - (other.borrow().cooked()[0] - topping.borrow().cooked()[0]).powi(2).min(0.04) * 25.0
                                          - (other.borrow().cooked()[1] - topping.borrow().cooked()[1]).powi(2).min(0.04) * 25.0;
                         },
-                        _ => {
-                            score += 1.0;
-                        },
+                        _ => {},
                     }
                 } else {
-                    score -= 1.0
+                    missing += 1;
+                    score -= 1.0;
+                }
+            }
+            for incorrect in toppings {
+                wrong += 1;
+                if let Some(Topping::Filling(Filling::Sausage)) = incorrect.borrow().topping() {
+                    if incorrect.borrow().cooked()[0] < 0.7 {
+                        sick = true;
+                    }
+                }
+                if incorrect.borrow().cooked()[1] > 1.4 {
+                    burnt += 1
+                }
+                if incorrect.borrow().cooked()[0] > 1.4 {
+                    burnt += 1
                 }
             }
             let mut meal = order.clone();
@@ -1200,12 +1229,12 @@ impl Entity for Customer {
                 Some(Mood::Sick)
             } else if has_filling {
                 let score = score / (self.order.toppings.len() as f64);
-                if score > 0.1 {
-                    Some(Mood::Happy)
-                } else if score > -0.5 {
+                if score < -0.5 || missing + wrong + burnt > 3 {
+                    Some(Mood::Sad)
+                } else if score < 0.1 || missing + wrong + burnt > 0 {
                     Some(Mood::Neutral)
                 } else {
-                    Some(Mood::Sad)
+                    Some(Mood::Happy)
                 }
             } else {
                 Some(Mood::Sad)
