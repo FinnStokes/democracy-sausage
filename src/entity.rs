@@ -827,7 +827,7 @@ impl Entity for Onion {
 
     fn cooked(&self) -> [f64; 2] {
         [
-            self.cooked.iter().cloned().fold(0./0., f64::min),
+            self.cooked.iter().sum() / self.cooked.len() as f64,
             self.cooked.iter().cloned().fold(0./0., f64::max),
         ]
     }
@@ -1328,8 +1328,8 @@ impl Entity for Customer {
                                     if other.borrow().cooked()[0] > 1.4 {
                                         burnt += 1
                                     }
-                                    score += 1.0 - (other.borrow().cooked()[0] - topping.borrow().cooked()[0]).powi(2).min(0.04) * 25.0
-                                                 - (other.borrow().cooked()[1] - topping.borrow().cooked()[1]).powi(2).min(0.04) * 25.0;
+                                    score += 1.0 - (other.borrow().cooked()[0] - topping.borrow().cooked()[0]).powi(2).min(0.1) * 10.0
+                                                 - (other.borrow().cooked()[1] - topping.borrow().cooked()[1]).powi(2).min(0.1) * 10.0;
                                 } else {
                                     if filling == Filling::VeggiePatty {
                                         sick = true;
@@ -1349,8 +1349,8 @@ impl Entity for Customer {
                             if other.borrow().cooked()[0] > 1.4 {
                                 burnt += 1
                             }
-                            score += 1.0 - (other.borrow().cooked()[0] - topping.borrow().cooked()[0]).powi(2).min(0.04) * 25.0
-                                         - (other.borrow().cooked()[1] - topping.borrow().cooked()[1]).powi(2).min(0.04) * 25.0;
+                            score += 1.0 - (other.borrow().cooked()[0] - topping.borrow().cooked()[0]).powi(2).min(0.1) * 10.0
+                                         - (other.borrow().cooked()[1] - topping.borrow().cooked()[1]).powi(2).min(0.1) * 10.0;
                         },
                         _ => {},
                     }
@@ -1382,7 +1382,7 @@ impl Entity for Customer {
                 let score = score / (self.order.toppings.len() as f64);
                 if score < -0.5 || missing + wrong + burnt > 3 {
                     Some(Mood::Sad)
-                } else if score < 0.1 || missing + wrong + burnt > 0 {
+                } else if score < 0.0 || missing + wrong + burnt > 0 {
                     Some(Mood::Neutral)
                 } else {
                     Some(Mood::Happy)
