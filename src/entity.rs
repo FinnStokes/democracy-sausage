@@ -39,15 +39,19 @@ pub trait Entity {
 }
 
 const SAUSAGE_SIZE: [f64; 2] = [13.0, 65.0];
+const SAUSAGE_TRAY: [f64; 2] = [105.0, 77.0];
 const PATTY_SIZE: [f64; 2] = [50.0, 36.0];
+const PATTY_TRAY: [f64; 2] = [62.0, 87.0];
 const PLATE_SIZE: [f64; 2] = [78.0, 78.0];
 const SAUSAGE_OFFSET: f64 = 10.0;
 const BREAD_SIZE: [f64; 2] = [53.0, 53.0];
+const LOAF_SIZE: [f64; 2] = [53.0, 120.0];
 const WHITE: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
 const HAPPY: [f32; 4] = [0.3, 1.0, 0.4, 1.0];
 const NEUTRAL: [f32; 4] = [0.9, 0.9, 0.1, 1.0];
 const SAD: [f32; 4] = [1.0, 0.1, 0.1, 1.0];
 const LIGHT_GREY: [f32; 4] = [0.95, 0.95, 0.95, 1.0];
+const DARK_GREY: [f32; 4] = [0.35, 0.35, 0.4, 1.0];
 const PINK: [f32; 4] = [239.0 / 255.0, 115.0 / 255.0, 156.0 / 255.0, 1.0];
 const YELLOW: [f32; 4] = [252.0 / 255.0, 217.0 / 255.0, 75.0 / 255.0, 1.0];
 const ORANGE: [f32; 4] = [247.0 / 255.0, 155.0 / 255.0, 27.0 / 255.0, 1.0];
@@ -434,6 +438,137 @@ impl Entity for Bread {
 
     fn order(&self) -> Option<&Bread> {
         Some(self)
+    }
+}
+
+pub struct Loaf {
+    pos: [f64; 2],
+}
+
+impl Loaf {
+    pub fn new(pos: [f64; 2]) -> Loaf {
+        Loaf{pos}
+    }
+}
+
+impl Entity for Loaf {
+    fn bounds(&self) -> Rectangle {
+        Rectangle::centered(self.pos, LOAF_SIZE)
+    }
+
+    fn select(&mut self, pos: [f64; 2]) -> Selection {
+        if self.bounds().intersect_point(pos) {
+            Selection::New(Rc::new(RefCell::new(Bread::new(pos))))
+        } else {
+            Selection::None
+        }
+    }
+
+    fn set_pos(&mut self, pos: [f64; 2]) {
+        self.pos = pos;
+    }
+
+    fn draw(&self, context: Context, graphics: &mut G) {
+        let inner_size = Rectangle::centered([self.pos[0], self.pos[1] + LOAF_SIZE[1] / 2.0 - 3.0 - 0.6 * BREAD_SIZE[1] / 2.0],
+                                             [LOAF_SIZE[0] - 6.0, 0.7 * BREAD_SIZE[1] - 6.0]);
+        piston_window::rectangle([194.0 / 255.0, 153.0 / 255.0, 26.0 / 255.0, 1.0],
+                                 self.bounds().as_floats(),
+                                 context.transform,
+                                 graphics);
+        piston_window::rectangle([255.0 / 255.0, 246.0 / 255.0, 206.0 / 255.0, 1.0],
+                                 inner_size.as_floats(),
+                                 context.transform,
+                                 graphics);
+    }
+}
+
+pub struct SausageTray {
+    pos: [f64; 2],
+}
+
+impl SausageTray {
+    pub fn new(pos: [f64; 2]) -> SausageTray {
+        SausageTray{pos}
+    }
+}
+
+impl Entity for SausageTray {
+    fn bounds(&self) -> Rectangle {
+        Rectangle::centered(self.pos, SAUSAGE_TRAY)
+    }
+
+    fn select(&mut self, pos: [f64; 2]) -> Selection {
+        if self.bounds().intersect_point(pos) {
+            Selection::New(Rc::new(RefCell::new(Cookable::new(Filling::Sausage, pos))))
+        } else {
+            Selection::None
+        }
+    }
+
+    fn set_pos(&mut self, pos: [f64; 2]) {
+        self.pos = pos;
+    }
+
+    fn draw(&self, context: Context, graphics: &mut G) {
+        rounded_rectangle(DARK_GREY,
+                          self.bounds().as_floats(),
+                          3.0,
+                          context.transform,
+                          graphics);
+        for x in &[-2.5, -1.5, -0.5, 0.5, 1.5, 2.5] {
+            piston_window::rectangle(PINK,
+                                     Rectangle::centered([self.pos[0] + x * (SAUSAGE_SIZE[0] + 3.0), self.pos[1]], SAUSAGE_SIZE).as_floats(),
+                                     context.transform,
+                                     graphics);
+        }
+    }
+}
+
+pub struct PattyTray {
+    pos: [f64; 2],
+    patties: [Cookable; 2],
+}
+
+impl PattyTray {
+    pub fn new(pos: [f64; 2]) -> PattyTray {
+        let mut patties = [
+            Cookable::new(Filling::VeggiePatty, [pos[0], pos[1] - 0.5 * (PATTY_SIZE[1] + 3.0)]),
+            Cookable::new(Filling::VeggiePatty, [pos[0], pos[1] + 0.5 * (PATTY_SIZE[1] + 3.0)]),
+        ];
+        patties[1].flipped = true;
+        PattyTray{
+            pos,
+            patties,
+        }
+    }
+}
+
+impl Entity for PattyTray {
+    fn bounds(&self) -> Rectangle {
+        Rectangle::centered(self.pos, PATTY_TRAY)
+    }
+
+    fn select(&mut self, pos: [f64; 2]) -> Selection {
+        if self.bounds().intersect_point(pos) {
+            Selection::New(Rc::new(RefCell::new(Cookable::new(Filling::VeggiePatty, pos))))
+        } else {
+            Selection::None
+        }
+    }
+
+    fn set_pos(&mut self, pos: [f64; 2]) {
+        // self.pos = pos;
+    }
+
+    fn draw(&self, context: Context, graphics: &mut G) {
+        rounded_rectangle(DARK_GREY,
+                          self.bounds().as_floats(),
+                          3.0,
+                          context.transform,
+                          graphics);
+        for patty in &self.patties {
+            patty.draw(context, graphics)
+        }
     }
 }
 

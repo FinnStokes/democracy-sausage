@@ -1,6 +1,6 @@
 use piston_window::{context::Context};
 
-use crate::entity::{G, Entity, Selection, Cookable, Filling, Bread, Hotplate, Table, Bottle, Condiment, ChoppingBoard, Queue};
+use crate::entity::{G, Entity, Selection, Loaf, SausageTray, PattyTray, Hotplate, Table, Bottle, Condiment, ChoppingBoard, Queue};
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -15,18 +15,11 @@ impl Scene {
         Scene(vec![
               Rc::new(RefCell::new(Queue::new([180.0, 50.0], [720.0, 50.0], 4))),
               Rc::new(RefCell::new(Table::new([-40.0, 200.0], [220.0, 440.0]))),
-              Rc::new(RefCell::new(ChoppingBoard::new([100.0, 400.0]))),
+              Rc::new(RefCell::new(ChoppingBoard::new([120.0, 400.0]))),
               hotplates[0].clone(),
-              Rc::new(RefCell::new(Bread::new([102.5, 305.0]))),
-              Rc::new(RefCell::new(Bread::new([120.0, 305.0]))),
-              Rc::new(RefCell::new(Bread::new([137.5, 305.0]))),
-              Rc::new(RefCell::new(Cookable::new(Filling::Sausage, [80.0, 240.0]))),
-              Rc::new(RefCell::new(Cookable::new(Filling::Sausage, [100.0, 240.0]))),
-              Rc::new(RefCell::new(Cookable::new(Filling::Sausage, [120.0, 240.0]))),
-              Rc::new(RefCell::new(Cookable::new(Filling::Sausage, [140.0, 240.0]))),
-              Rc::new(RefCell::new(Cookable::new(Filling::Sausage, [160.0, 240.0]))),
-              Rc::new(RefCell::new(Cookable::new(Filling::VeggiePatty, [30.0, 260.0]))),
-              Rc::new(RefCell::new(Cookable::new(Filling::VeggiePatty, [30.0, 305.0]))),
+              Rc::new(RefCell::new(Loaf::new([30.0, 400.0]))),
+              Rc::new(RefCell::new(SausageTray::new([120.0, 270.0]))),
+              Rc::new(RefCell::new(PattyTray::new([33.0, 282.5]))),
               Rc::new(RefCell::new(Bottle::new(Condiment::Sauce, [15.0, 180.0]))),
               Rc::new(RefCell::new(Bottle::new(Condiment::Mustard, [45.0, 180.0]))),
         ])
