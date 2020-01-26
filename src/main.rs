@@ -1,6 +1,5 @@
 use piston_window::*;
 use fps_counter::FPSCounter;
-use graphics_tree::{GraphicsTree, TextureBuffer};
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -18,69 +17,59 @@ fn main() {
     let mut window: PistonWindow =
         WindowSettings::new("Sizzle!", [640, 480])
         .exit_on_esc(true)
-        .vsync(true)
+        //.vsync(true)
         //.fullscreen(true)
         .build().unwrap();
 
     let mut fps_counter = FPSCounter::new();
     let mut fps = 0;
 
-    let mut selected: Option<Rc<RefCell<dyn Entity<GraphicsTree>>>> = None;
+    let mut selected: Option<Rc<RefCell<dyn Entity>>> = None;
     let mut last_pos: Option<[f64; 2]> = None;
     let mut transform: Option<[[f64; 3]; 2]> = None;
 
     let mut scene = Scene::new();
 
-    let ref mut graphics_tree = GraphicsTree::new();
-    let ref mut texture_buffer = TextureBuffer::new(TextureContext {
-        factory: window.factory.clone(),
-        encoder: window.factory.create_command_buffer().into()
-    });
-
     let mut last_time = Instant::now();
 
     while let Some(e) = window.next() {
         window.draw_2d(&e, |context, raw_graphics, _device| {
-            if graphics_tree.is_empty() {
-                let size = context.get_view_size();
-                let sx = size[0] / 640.0;
-                let sy = size[1] / 480.0;
-                let letterbox_h = ((size[0] - 640.0 * sy) / 2.0).max(0.0);
-                let letterbox_v = ((size[1] - 480.0 * sx) / 2.0).max(0.0);
-                let scale = sx.min(sy);
-                let t = math::multiply(
-                    math::scale(1.0 / scale, 1.0 / scale),
-                    math::translate([-letterbox_h, -letterbox_v]),
-                );
-                let context = context
-                    .trans(letterbox_h, letterbox_v)
-                    .scale(scale, scale);
-                transform = Some(t);
-                clear([90.0 / 255.0, 202.0 / 255.0, 77.0 / 255.0, 1.0], graphics_tree);
-                scene.draw(context, graphics_tree);
-                if letterbox_v > 0.0 {
-                    piston_window::rectangle([0.0, 0.0, 0.0, 1.0],
-                                             [0.0, -2.0 * letterbox_v, 640.0, 2.0 * letterbox_v],
-                                             context.transform,
-                                             graphics_tree);
-                    piston_window::rectangle([0.0, 0.0, 0.0, 1.0],
-                                             [0.0, 480.0, 640.0, 2.0 * letterbox_v],
-                                             context.transform,
-                                             graphics_tree);
-                }
-                if letterbox_h > 0.0 {
-                    piston_window::rectangle([0.0, 0.0, 0.0, 1.0],
-                                             [-2.0 * letterbox_h, 0.0, 2.0 * letterbox_h, 480.0],
-                                             context.transform,
-                                             graphics_tree);
-                    piston_window::rectangle([0.0, 0.0, 0.0, 1.0],
-                                             [640.0, 0.0, 2.0 * letterbox_h, 480.0],
-                                             context.transform,
-                                             graphics_tree);
-                }
+            let size = context.get_view_size();
+            let sx = size[0] / 640.0;
+            let sy = size[1] / 480.0;
+            let letterbox_h = ((size[0] - 640.0 * sy) / 2.0).max(0.0);
+            let letterbox_v = ((size[1] - 480.0 * sx) / 2.0).max(0.0);
+            let scale = sx.min(sy);
+            let t = math::multiply(
+                math::scale(1.0 / scale, 1.0 / scale),
+                math::translate([-letterbox_h, -letterbox_v]),
+            );
+            let context = context
+                .trans(letterbox_h, letterbox_v)
+                .scale(scale, scale);
+            transform = Some(t);
+            clear([90.0 / 255.0, 202.0 / 255.0, 77.0 / 255.0, 1.0], raw_graphics);
+            scene.draw(context, raw_graphics);
+            if letterbox_v > 0.0 {
+                piston_window::rectangle([0.0, 0.0, 0.0, 1.0],
+                                         [0.0, -2.0 * letterbox_v, 640.0, 2.0 * letterbox_v],
+                                         context.transform,
+                                         raw_graphics);
+                piston_window::rectangle([0.0, 0.0, 0.0, 1.0],
+                                         [0.0, 480.0, 640.0, 2.0 * letterbox_v],
+                                         context.transform,
+                                         raw_graphics);
             }
-
-            graphics_tree.draw(texture_buffer, raw_graphics);
+            if letterbox_h > 0.0 {
+                piston_window::rectangle([0.0, 0.0, 0.0, 1.0],
+                                         [-2.0 * letterbox_h, 0.0, 2.0 * letterbox_h, 480.0],
+                                         context.transform,
+                                         raw_graphics);
+                piston_window::rectangle([0.0, 0.0, 0.0, 1.0],
+                                         [640.0, 0.0, 2.0 * letterbox_h, 480.0],
+                                         context.transform,
+                                         raw_graphics);
+            }
             fps = fps_counter.tick();
         });
         window.set_title(fps.to_string());
@@ -94,7 +83,6 @@ fn main() {
             if let Some(ref mut selected) = selected {
                 selected.borrow_mut().update_selected(dt);
             }
-            graphics_tree.clear();
         }
 
         if let Some(button) = e.press_args() {
@@ -125,7 +113,6 @@ fn main() {
                 let pos = math::transform_pos(transform, pos);
                 let last_pos = math::transform_pos(transform, last_pos);
                 selected.borrow_mut().drag(last_pos, pos);
-                graphics_tree.clear();
             }
         }
 
