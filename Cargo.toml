@@ -8,6 +8,7 @@ edition = "2018"
 
 [dependencies]
 piston_window = "0.98.0"
+fps_counter = "1.0.0"
 noise = "0.6.0"
 rand = "0.7.3"
 rand_distr = "0.2.2"

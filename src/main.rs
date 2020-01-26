@@ -1,6 +1,7 @@
 #![feature(drain_filter, clamp, option_result_contains)]
 
 use piston_window::*;
+use fps_counter::FPSCounter;
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -18,8 +19,11 @@ fn main() {
         WindowSettings::new("Sizzle!", [640, 480])
         .exit_on_esc(true)
         .vsync(true)
-        .fullscreen(true)
+        //.fullscreen(true)
         .build().unwrap();
+
+    let mut fps_counter = FPSCounter::new();
+    let mut fps = 0;
 
     let mut selected: Option<Rc<RefCell<dyn Entity>>> = None;
     let mut last_pos: Option<[f64; 2]> = None;
@@ -65,7 +69,10 @@ fn main() {
                                          context.transform,
                                          graphics);
             }
+
+            fps = fps_counter.tick();
         });
+        window.set_title(fps.to_string());
         
         if let Some(args) = e.update_args() {
             scene.update(args.dt);
