@@ -141,7 +141,7 @@ impl<G: Graphics> Entity<G> for Cookable {
             vec![Rc::new(RefCell::new(Smoke::new([
                 bounds[0] + rand::random::<f64>() * bounds[2],
                 bounds[1] + rand::random::<f64>() * bounds[3],
-            ], 0.4 * (3.8 - 3.0 * self.bottom_cooked as f32).clamp(0.0, 1.0))))]
+            ], 0.4 * (3.8 - 3.0 * self.bottom_cooked as f32).max(0.0).min(1.0))))]
         } else {
             vec![]
         }
@@ -226,11 +226,15 @@ impl<G: Graphics> Entity<G> for Cookable {
                 Entity::<G>::set_pos(self, pos);
                 Selection::This
             },
-            Some(f) => if f.borrow().topping().contains(&Topping::Filling(Filling::Sausage)) && self.kind == Filling::Sausage {
-                if let None = other_fillings.next() {
-                    self.pos = [pos[0] + SAUSAGE_OFFSET, pos[1]];
-                    f.borrow_mut().set_pos([pos[0] - SAUSAGE_OFFSET, pos[1]]);
-                    Selection::This
+            Some(f) => if Some(Topping::Filling(Filling::Sausage)) == f.borrow().topping() {
+                if self.kind == Filling::Sausage {
+                    if let None = other_fillings.next() {
+                        self.pos = [pos[0] + SAUSAGE_OFFSET, pos[1]];
+                        f.borrow_mut().set_pos([pos[0] - SAUSAGE_OFFSET, pos[1]]);
+                        Selection::This
+                    } else {
+                        Selection::None
+                    }
                 } else {
                     Selection::None
                 }
@@ -678,7 +682,7 @@ impl<G: Graphics> Entity<G> for Onion {
             vec![Rc::new(RefCell::new(Smoke::new([
                 bounds[0] + rand::random::<f64>() * bounds[2],
                 bounds[1] + rand::random::<f64>() * bounds[3],
-            ], 0.4 * (3.8 - 3.0 * self.cooked[0] as f32).clamp(0.0, 1.0))))]
+            ], 0.4 * (3.8 - 3.0 * self.cooked[0] as f32).max(0.0).min(1.0))))]
         } else {
             vec![]
         }
@@ -719,7 +723,7 @@ impl<G: Graphics> Entity<G> for Onion {
 
     fn add_to(&mut self, pos: [f64; 2], others: &[Rc<RefCell<dyn Entity<G>>>]) -> Selection<G> {
         if others.iter()
-                 .filter(|e| e.borrow().topping().contains(&Topping::Onion))
+                 .filter(|e| e.borrow().topping() == Some(Topping::Onion))
                  .next()
                  .is_none() {
             Entity::<G>::set_pos(self, pos);
@@ -879,7 +883,7 @@ impl<G: Graphics> Entity<G> for Squirt {
 
     fn add_to(&mut self, pos: [f64; 2], others: &[Rc<RefCell<dyn Entity<G>>>]) -> Selection<G> {
         if others.iter()
-                 .filter(|e| e.borrow().topping().contains(&Topping::Condiment(self.condiment)))
+                 .filter(|e| e.borrow().topping() == Some(Topping::Condiment(self.condiment)))
                  .next()
                  .is_none() {
             Entity::<G>::set_pos(self, pos);
@@ -1281,17 +1285,6 @@ impl<G: Graphics> Entity<G> for Queue<G> {
             customer.draw(context, graphics);
         }
     }
-
-    // fn add_to(&mut self, pos: [f64; 2], others: &[Rc<RefCell<dyn Entity<G>>>]) -> Selection<G> {
-    //     if others.iter()
-    //              .filter(|e| e.borrow().topping().contains(&Topping::Condiment(self.condiment)))
-    //              .next()
-    //              .is_none() {
-    //         Selection::New(Rc::new(RefCell::new(Squirt::new(self.condiment, pos))))
-    //     } else {
-    //         Selection::None
-    //     }
-    // }
 
     fn update(&mut self, dt: f64) -> Vec<Rc<RefCell<dyn Entity<G>>>> {
         if self.customers.len() < self.max_len && rand::random::<f64>() < dt * CUSTOMERS_PER_SECOND {

@@ -43,7 +43,7 @@ impl<G: Graphics + 'static> Scene<G> {
         for e in self.0.iter() {
             new.append(&mut e.borrow_mut().update(dt));
         }
-        self.0.drain_filter(|e| e.borrow().expired()).count();
+        self.0.retain(|e| !e.borrow().expired());
         self.0.append(&mut new);
     }
 

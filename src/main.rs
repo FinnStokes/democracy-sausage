@@ -1,5 +1,3 @@
-#![feature(drain_filter, clamp, option_result_contains)]
-
 use piston_window::*;
 use fps_counter::FPSCounter;
 use graphics_tree::{GraphicsTree, TextureBuffer};
