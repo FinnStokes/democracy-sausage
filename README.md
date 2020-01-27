@@ -5,6 +5,6 @@ Grease the wheels of democracy with your very own sausage sizzle. A game created
 
 Click and drag to throw enough snags on the barbie to feed the hungry voters.
 
-Windows build currently unavailable due to severe performance issues that I was unable to resolve before the jam deadline.
+To build from source you need the [rust compiler](https://www.rust-lang.org/tools/install). You can the build and run the game with `cargo run --release`.
 
 Made for the Australian Bushfire Charity Jam.
