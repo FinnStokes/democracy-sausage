@@ -13,7 +13,6 @@ impl Scene {
             Rc::new(RefCell::new(Hotplate::new([200.0, 200.0], [420.0, 200.0], rand::random()))),
         ];
         Scene(vec![
-              Rc::new(RefCell::new(Queue::new([180.0, 50.0], [720.0, 50.0], 4))),
               Rc::new(RefCell::new(Table::new([-40.0, 200.0], [220.0, 440.0]))),
               Rc::new(RefCell::new(ChoppingBoard::new([120.0, 400.0]))),
               hotplates[0].clone(),
@@ -22,6 +21,7 @@ impl Scene {
               Rc::new(RefCell::new(PattyTray::new([33.0, 282.5]))),
               Rc::new(RefCell::new(Bottle::new(Condiment::Sauce, [15.0, 180.0]))),
               Rc::new(RefCell::new(Bottle::new(Condiment::Mustard, [45.0, 180.0]))),
+              Rc::new(RefCell::new(Queue::new([180.0, 50.0], [720.0, 50.0], 4))),
         ])
     }
 
@@ -69,6 +69,9 @@ impl Scene {
     }
 
     pub fn dropped(&mut self, entity: &Rc<RefCell<dyn Entity>>) {
+        for e in self.0.iter().filter(|e| !Rc::ptr_eq(e, entity)) {
+            e.borrow_mut().other_dropped(entity);
+        }
         if !entity.borrow().topping().is_none() {
             for e in self.0.iter().rev().filter(|e| !Rc::ptr_eq(e, entity) && e.borrow().bounds().intersect_rect(&entity.borrow().bounds())) {
                 let res = e.borrow_mut().add_topping(entity);

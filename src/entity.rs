@@ -27,6 +27,7 @@ pub trait Entity {
     fn drag(&mut self, _from: [f64; 2], _to: [f64; 2]) {}
     fn draw(&self, context: Context, graphics: &mut G);
     fn set_pos(&mut self, _pos: [f64; 2]) {}
+    fn get_pos(& self) -> [f64; 2] {self.bounds().centre()}
     fn topping(&self) -> Option<Topping> { None }
     fn add_topping(&mut self, _topping: &Rc<RefCell<dyn Entity>>) -> Selection { Selection::None }
     fn add_to(&mut self, _pos: [f64; 2], _others: &[Rc<RefCell<dyn Entity>>]) -> Selection { Selection::None }
@@ -36,6 +37,7 @@ pub trait Entity {
     fn expired(&self) -> bool { false }
     fn order(&self) -> Option<&Bread> { None }
     fn deliver_order(&mut self, _order: &Bread) -> Option<Mood> { None }
+    fn other_dropped(&mut self, _other: &Rc<RefCell<dyn Entity>>) {}
 }
 
 const SAUSAGE_SIZE: [f64; 2] = [13.0, 65.0];
@@ -827,7 +829,7 @@ impl Entity for Onion {
 
     fn cooked(&self) -> [f64; 2] {
         [
-            self.cooked.iter().sum() / self.cooked.len() as f64,
+            self.cooked.iter().sum::<f64>() / self.cooked.len() as f64,
             self.cooked.iter().cloned().fold(0./0., f64::max),
         ]
     }
@@ -1287,11 +1289,6 @@ impl Entity for Customer {
             meal.draw(context, graphics);
         }
     }
-// pub enum Topping {
-//     Filling(Filling),
-//     Onion,
-//     Condiment(Condiment),
-// }
 
     fn deliver_order(&mut self, order: &Bread) -> Option<Mood> {
         if self.mood.is_none() && order.bounds().intersect_rect(&self.bounds()) {
@@ -1398,11 +1395,28 @@ impl Entity for Customer {
     }
 }
 
+#[derive(PartialEq, Eq)]
+enum Stage {
+    TutorialStart,
+    TutorialSausage,
+    TutorialCooking1,
+    TutorialFlip,
+    TutorialBread,
+    TutorialCooking2,
+    TutorialCombine1,
+    TutorialServe1,
+    Freeplay,
+}
+
 pub struct Queue {
     head: [f64; 2],
     entry: [f64; 2],
     max_len: usize,
     customers: Vec<Customer>,
+    stage: Stage,
+    pointer: Option<Pointer>,
+    sausage: Option<Rc<RefCell<dyn Entity>>>,
+    bread: Option<Rc<RefCell<dyn Entity>>>,
 }
 
 impl Queue {
@@ -1410,6 +1424,10 @@ impl Queue {
         Queue{
             head, entry, max_len,
             customers: Vec::with_capacity(max_len),
+            stage: Stage::TutorialStart,
+            pointer: None,
+            sausage: None,
+            bread: None,
         }
     }
 }
@@ -1423,11 +1441,111 @@ impl Entity for Queue {
         for customer in &self.customers {
             customer.draw(context, graphics);
         }
+
+        if let Some(pointer) = &self.pointer {
+            pointer.draw(context, graphics);
+        }
     }
 
     fn update(&mut self, dt: f64) -> Vec<Rc<RefCell<dyn Entity>>> {
-        if self.customers.len() < self.max_len && rand::random::<f64>() < dt * CUSTOMERS_PER_SECOND {
-            self.customers.push(Customer::new(self.entry));
+        match self.stage {
+            Stage::Freeplay => {
+                if self.customers.len() < self.max_len && rand::random::<f64>() < dt * CUSTOMERS_PER_SECOND {
+                    self.customers.push(Customer::new(self.entry));
+                }
+            },
+            Stage::TutorialStart => {
+                self.customers.push(Customer{
+                    pos: self.entry,
+                    order: Bread{
+                        pos: [self.entry[0] + ORDER_OFFSET[0], self.entry[1] + ORDER_OFFSET[1]],
+                        toppings: vec![Rc::new(RefCell::new(Cookable::with_cooked(
+                            Filling::Sausage,
+                            [self.entry[0] + ORDER_OFFSET[0], self.entry[1] + ORDER_OFFSET[1]],
+                            1.0,
+                        )))],
+                    },
+                    meal: None,
+                    mood: None,
+                });
+                self.stage = Stage::TutorialSausage;
+                self.pointer = Some(Pointer::new([120.0, 270.0], [300.0, 270.0]))
+            },
+            Stage::TutorialSausage => {
+                if !self.sausage.is_none() {
+                    self.pointer = None;
+                    self.stage = Stage::TutorialCooking1;
+                }
+            },
+            Stage::TutorialCooking1 => {
+                if let Some(sausage) = &self.sausage {
+                    if sausage.borrow().cooked()[1] > 0.9 {
+                        self.pointer = Some(Pointer::new(sausage.borrow().get_pos(), [sausage.borrow().get_pos()[0] - 20.0, sausage.borrow().get_pos()[1]]));
+                        self.stage = Stage::TutorialFlip;
+                    }
+                }
+            },
+            Stage::TutorialFlip => {},
+            Stage::TutorialBread => {
+                if let Some(_) = &self.bread {
+                    if let Some(_) = &self.sausage {
+                        self.pointer = None;
+                        self.stage = Stage::TutorialCooking2;
+                    }
+                }
+
+            },
+            Stage::TutorialCooking2 => {
+                if let Some(sausage) = &self.sausage {
+                    if let Some(bread) = &self.bread {
+                        if sausage.borrow().cooked()[0] > 0.9 {
+                            self.pointer = Some(Pointer::new(sausage.borrow().get_pos(), bread.borrow().get_pos()));
+                            self.stage = Stage::TutorialCombine1;
+                        }
+                    }
+                }
+            },
+            Stage::TutorialCombine1 => {
+                if let Some(bread) = &self.bread {
+                    if let Some(order) = bread.borrow().order() {
+                        if order.toppings.iter().filter(|t| t.borrow().topping() == Some(Topping::Filling(Filling::Sausage))).count() > 0 {
+                            self.pointer = Some(Pointer::new(bread.borrow().get_pos(), self.head));
+                            self.stage = Stage::TutorialServe1;
+                        }
+                    }
+                }
+            },
+            Stage::TutorialServe1 => {},
+            // Stage::TutorialStage2 => {
+            //     self.customers.push(Customer{
+            //         pos: self.entry,
+            //         order: Bread{
+            //             pos: [self.entry[0] + ORDER_OFFSET[0], self.entry[1] + ORDER_OFFSET[1]],
+            //             toppings: vec![Rc::new(RefCell::new(Cookable::with_cooked(
+            //                 Filling::Sausage,
+            //                 pos: [self.entry[0] + ORDER_OFFSET[0] - SAUSAGE_OFFSET, self.entry[1] + ORDER_OFFSET[1]],
+            //                 1.0,
+            //             ))), Rc::new(RefCell::new(Cookable::with_cooked(
+            //                 Filling::Sausage,
+            //                 pos: [self.entry[0] + ORDER_OFFSET[0] + SAUSAGE_OFFSET, self.entry[1] + ORDER_OFFSET[1]],
+            //                 1.0,
+            //             ))), Rc::new(RefCell::new(Onion::with_cooked(
+            //                 pos: [self.entry[0] + ORDER_OFFSET[0], self.entry[1] + ORDER_OFFSET[1]],
+            //                 1.0,
+            //             ))), Rc::new(RefCell::new(Squirt::new(
+            //                 Condiment::Sauce,
+            //                 pos: [self.entry[0] + ORDER_OFFSET[0], self.entry[1] + ORDER_OFFSET[1]],
+            //             )))],
+            //         },
+            //         meal: None,
+            //         mood: None,
+            //     });
+            //     self.stage = Stage::TutorialChop;
+            // },
+        }
+
+        if let Some(pointer) = &mut self.pointer {
+            pointer.update(dt);
         }
 
         let del = [self.head[0] - self.entry[0], self.head[1] - self.entry[1]];
@@ -1470,12 +1588,102 @@ impl Entity for Queue {
         vec![]
     }
 
+    fn other_dropped(&mut self, other: &Rc<RefCell<dyn Entity>>) {
+        if other.borrow().topping() == Some(Topping::Filling(Filling::Sausage)) {
+            self.sausage = Some(other.clone());
+        }
+        if !other.borrow().order().is_none() {
+            self.bread = Some(other.clone());
+        }
+        match self.stage {
+            Stage::TutorialFlip => {
+                if let Some(sausage) = &self.sausage {
+                    if Rc::ptr_eq(other, sausage) {
+                        self.pointer = Some(Pointer::new([30.0, 400.0], [120.0, 340.0]));
+                        self.stage = Stage::TutorialBread;
+                    }
+                }
+            },
+            _ => {},
+        }
+    }
+
     fn deliver_order(&mut self, order: &Bread) -> Option<Mood> {
         for customer in &mut self.customers {
             if let Some(mood) = customer.deliver_order(order) {
+                if self.stage != Stage::Freeplay {
+                    self.stage = Stage::Freeplay;
+                    self.pointer = None;
+                    self.sausage = None;
+                    self.bread = None;
+                    self.customers.push(Customer::new(self.entry));
+                }
                 return Some(mood);
             }
         }
         None
+    }
+}
+
+const POINTER_SPEED: f64 = 100.0;
+const POINTER_PAUSE: f64 = 0.5;
+const POINTER_HIDE: f64 = 2.0;
+const POINTER_COLOUR: [f32; 4] = [0.4, 0.4, 0.5, 0.8];
+const POINTER_R: f64 = 15.0;
+
+pub struct Pointer {
+    pos: [f64; 2],
+    start: [f64; 2],
+    end: [f64; 2],
+    age: f64,
+    duration: f64,
+    expired: bool,
+}
+
+impl Pointer {
+    fn new(start: [f64; 2], end: [f64; 2]) -> Pointer {
+        Pointer{
+            pos: start,
+            start,
+            end,
+            age: 0.0,
+            duration: ((end[0] - start[0]).powi(2) + (end[1] - start[1]).powi(2)).sqrt() / POINTER_SPEED,
+            expired: false,
+        }
+    }
+}
+
+impl Entity for Pointer {
+    fn bounds(&self) -> Rectangle {
+        Rectangle::centered(self.pos, [2.0 * POINTER_R, 2.0 * POINTER_R])
+    }
+
+    fn update(&mut self, dt: f64) -> Vec<Rc<RefCell<dyn Entity>>> {
+        self.age = (self.age + dt) % (self.duration + 2.0 * POINTER_PAUSE + POINTER_HIDE);
+        self.pos = if self.age < POINTER_PAUSE {
+            self.start
+        } else if self.age > self.duration + POINTER_PAUSE {
+            self.end
+        } else {
+            let s = (self.age - POINTER_PAUSE) / self.duration;
+            [
+                self.start[0] * (1.0 - s) + self.end[0] * s,
+                self.start[1] * (1.0 - s) + self.end[1] * s,
+            ]
+        };
+        vec![]
+    }
+
+    fn expired(&self) -> bool {
+        self.expired
+    }
+
+    fn draw(&self, context: Context, graphics: &mut G) {
+        if self.age < self.duration + 2.0 * POINTER_PAUSE {
+            piston_window::ellipse(POINTER_COLOUR,
+                                   self.bounds().as_floats(),
+                                   context.transform,
+                                   graphics);
+        }
     }
 }
