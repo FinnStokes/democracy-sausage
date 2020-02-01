@@ -1505,16 +1505,7 @@ impl Entity for Queue {
                     }
                 }
             },
-            Stage::TutorialCombine1 => {
-                if let Some(bread) = &self.bread {
-                    if let Some(order) = bread.borrow().order() {
-                        if order.toppings.iter().filter(|t| t.borrow().topping() == Some(Topping::Filling(Filling::Sausage))).count() > 0 {
-                            self.pointer = Some(Pointer::new(bread.borrow().get_pos(), self.head));
-                            self.stage = Stage::TutorialServe1;
-                        }
-                    }
-                }
-            },
+            Stage::TutorialCombine1 => {},
             Stage::TutorialServe1 => {},
             // Stage::TutorialStage2 => {
             //     self.customers.push(Customer{
@@ -1542,6 +1533,17 @@ impl Entity for Queue {
             //     });
             //     self.stage = Stage::TutorialChop;
             // },
+        }
+
+        if let Some(bread) = &self.bread {
+            if let Some(order) = bread.borrow().order() {
+                if self.stage != Stage::TutorialServe1 {
+                    if order.toppings.iter().filter(|t| t.borrow().topping() == Some(Topping::Filling(Filling::Sausage))).count() > 0 {
+                        self.pointer = Some(Pointer::new(bread.borrow().get_pos(), self.head));
+                        self.stage = Stage::TutorialServe1;
+                    }
+                }
+            }
         }
 
         if let Some(pointer) = &mut self.pointer {
@@ -1628,7 +1630,7 @@ impl Entity for Queue {
 const POINTER_SPEED: f64 = 100.0;
 const POINTER_PAUSE: f64 = 0.5;
 const POINTER_HIDE: f64 = 2.0;
-const POINTER_COLOUR: [f32; 4] = [0.4, 0.4, 0.5, 0.8];
+const POINTER_COLOUR: [f32; 4] = [0.0, 0.0, 0.7, 0.8];
 const POINTER_R: f64 = 15.0;
 
 pub struct Pointer {
